@@ -1,0 +1,22 @@
+# Core dependencies for Synth Analog Experiments
+numpy>=1.21.0
+pandas>=1.3.0
+matplotlib>=3.5.0
+seaborn>=0.11.0
+scipy>=1.7.0
+scikit-learn>=1.0.0
+
+# Jupyter for notebooks
+jupyter>=1.0.0
+ipykernel>=6.0.0
+
+# Testing
+pytest>=6.0.0
+pytest-cov>=2.0.0
+
+# For potential Synth subnet integration
+requests>=2.25.0
+websockets>=10.0
+
+# For analog-inspired models (we'll add more as needed)
+torch>=1.9.0  # Optional: for neural network approaches
