@@ -1,33 +1,29 @@
-import os
-import subprocess
-
 import pytest
-from sqlalchemy import create_engine
-from testcontainers.postgres import PostgresContainer
+import numpy as np
+from datetime import datetime, timedelta
 
-postgres = PostgresContainer("postgres:16-alpine")
+# Simple test fixtures for baseline model testing
+@pytest.fixture
+def sample_price_data():
+    """Sample price data for testing."""
+    start_time = datetime.now()
+    prices = [100.0, 101.0, 99.5, 102.0, 98.0, 103.0, 97.5, 104.0]
+    times = [start_time + timedelta(minutes=i*5) for i in range(len(prices))]
+    return list(zip(times, prices))
 
+@pytest.fixture
+def test_parameters():
+    """Common test parameters for models."""
+    return {
+        'start_price': 100.0,
+        'start_time': datetime.now(),
+        'time_increment': 300,  # 5 minutes
+        'time_horizon': 3600,   # 1 hour
+        'num_simulations': 10
+    }
 
-@pytest.fixture(scope="module", autouse=True)
-def setup(request):
-    postgres.start()
-
-    def remove_container():
-        postgres.stop()
-
-    request.addfinalizer(remove_container)
-    os.environ["DB_URL_TEST"] = postgres.get_connection_url()
-
-
-@pytest.fixture(scope="module", autouse=True)
-def apply_migrations(setup):
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    alembic_command = ["alembic", "upgrade", "head"]
-    subprocess.run(alembic_command, check=True, cwd=project_root)
-
-
-@pytest.fixture(scope="module", autouse=True)
-def db_engine(setup):
-    engine = create_engine(os.environ["DB_URL_TEST"])
-    yield engine
-    engine.dispose()
+@pytest.fixture
+def random_seed():
+    """Set random seed for reproducible tests."""
+    np.random.seed(42)
+    return 42
