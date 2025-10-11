@@ -62,6 +62,21 @@ class EnsembleGBMWeightedModel:
         # Update mean reversion model with current price
         self.models['MeanReversion'].mean_price = start_price
         
+        # Get predictions from each individual model
+        model_predictions = {}
+        for model_name, model in self.models.items():
+            try:
+                pred = model.predict(start_price, start_time, 
+                                   time_increment, time_horizon, num_simulations)
+                if pred and len(pred) > 0:
+                    model_predictions[model_name] = pred
+            except Exception as e:
+                print(f"Warning: {model_name} model failed: {e}")
+                continue
+        
+        if not model_predictions:
+            raise ValueError("All models failed to generate predictions")
+        
         # Calculate number of time steps
         num_steps = int(time_horizon / time_increment) + 1  # +1 for start time
         
@@ -80,23 +95,29 @@ class EnsembleGBMWeightedModel:
                         'price': start_price
                     })
                 else:
-                    # Future time steps - get predictions from each model
-                    model_predictions = []
+                    # Future time steps - ensemble predictions
+                    step_predictions = []
+                    weights_used = []
                     
-                    for model_name, model in self.models.items():
-                        # Get prediction for this specific time step
-                        pred = model.predict(start_price, start_time, 
-                                          time_increment, time_horizon, 1)
-                        if pred and pred[0] and len(pred[0]) > step:
-                            model_predictions.append(pred[0][step]['price'])
+                    for i, (model_name, model_preds) in enumerate(model_predictions.items()):
+                        if sim < len(model_preds) and step < len(model_preds[sim]):
+                            step_predictions.append(model_preds[sim][step]['price'])
+                            weights_used.append(self.weights[i])
                     
-                    if model_predictions:
+                    if step_predictions:
                         # Weighted average of predictions
-                        weighted_price = sum(p * w for p, w in zip(model_predictions, self.weights[:len(model_predictions)]))
+                        weighted_price = sum(p * w for p, w in zip(step_predictions, weights_used))
                         
                         simulation_predictions.append({
                             'time': current_time.isoformat(),
                             'price': max(0.01, weighted_price)  # Ensure positive price
+                        })
+                    else:
+                        # Fallback to previous price if no predictions available
+                        prev_price = simulation_predictions[step-1]['price']
+                        simulation_predictions.append({
+                            'time': current_time.isoformat(),
+                            'price': prev_price
                         })
             
             if simulation_predictions:
@@ -107,7 +128,7 @@ class EnsembleGBMWeightedModel:
 
 def generate_synth_simulations(
     asset="BTC",
-    start_time: str = "",
+    start_time="",
     time_increment=300,
     time_length=86400,
     num_simulations=100,
@@ -139,8 +160,11 @@ def generate_synth_simulations(
     # Initialize our best model
     model = EnsembleGBMWeightedModel()
     
-    # Convert start_time string to datetime
-    start_datetime = datetime.fromisoformat(start_time)
+    # Convert start_time to datetime (handle both string and datetime inputs)
+    if isinstance(start_time, str):
+        start_datetime = datetime.fromisoformat(start_time)
+    else:
+        start_datetime = start_time
     
     # Generate predictions using our ensemble model
     predictions = model.predict(
@@ -158,7 +182,7 @@ def test_our_model():
     """
     Test our model integration with Synth subnet format.
     """
-    print("🧪 Testing our Ensemble (GBM-weighted) model integration...")
+    print("Testing our Ensemble (GBM-weighted) model integration...")
     print("=" * 60)
     
     # Test parameters (matching Synth subnet defaults)
@@ -182,59 +206,59 @@ def test_our_model():
         
         # Validate output format
         if not predictions:
-            print("❌ No predictions generated")
+            print("ERROR: No predictions generated")
             return False
             
         if len(predictions) != num_simulations:
-            print(f"❌ Expected {num_simulations} simulations, got {len(predictions)}")
+            print(f"ERROR: Expected {num_simulations} simulations, got {len(predictions)}")
             return False
             
         # Check first simulation format
         first_sim = predictions[0]
         if not isinstance(first_sim, list):
-            print("❌ Each simulation should be a list")
+            print("ERROR: Each simulation should be a list")
             return False
             
         # Check time points (should be 25 for 24 hours with 5-minute increments)
         expected_steps = int(time_length / time_increment) + 1
         if len(first_sim) != expected_steps:
-            print(f"❌ Expected {expected_steps} time points, got {len(first_sim)}")
+            print(f"ERROR: Expected {expected_steps} time points, got {len(first_sim)}")
             return False
             
         # Check format of first prediction
         first_pred = first_sim[0]
         if not isinstance(first_pred, dict) or 'time' not in first_pred or 'price' not in first_pred:
-            print("❌ Each prediction should be a dict with 'time' and 'price' keys")
+            print("ERROR: Each prediction should be a dict with 'time' and 'price' keys")
             return False
             
-        print(f"✅ Generated {len(predictions)} simulations")
-        print(f"✅ Each simulation has {len(first_sim)} time points")
-        print(f"✅ Format validation passed")
-        print(f"✅ Start time: {first_sim[0]['time']}")
-        print(f"✅ End time: {first_sim[-1]['time']}")
-        print(f"✅ Price range: ${min(p['price'] for p in first_sim):.2f} - ${max(p['price'] for p in first_sim):.2f}")
+        print(f"SUCCESS: Generated {len(predictions)} simulations")
+        print(f"SUCCESS: Each simulation has {len(first_sim)} time points")
+        print(f"SUCCESS: Format validation passed")
+        print(f"SUCCESS: Start time: {first_sim[0]['time']}")
+        print(f"SUCCESS: End time: {first_sim[-1]['time']}")
+        print(f"SUCCESS: Price range: ${min(p['price'] for p in first_sim):.2f} - ${max(p['price'] for p in first_sim):.2f}")
         
         return True
         
     except Exception as e:
-        print(f"❌ Error during testing: {e}")
+        print(f"ERROR: Error during testing: {e}")
         return False
 
 
 if __name__ == "__main__":
-    print("🚀 Synth Subnet Integration - Analog Experiments")
+    print("Synth Subnet Integration - Analog Experiments")
     print("=" * 60)
-    print("🎯 Using our best model: Ensemble (GBM-weighted)")
-    print("📊 Expected CRPS Score: 547.30")
-    print("💰 Ready to earn TAO rewards!")
+    print("Using our best model: Ensemble (GBM-weighted)")
+    print("Expected CRPS Score: 547.30")
+    print("Ready to earn TAO rewards!")
     print()
     
     # Test our integration
     success = test_our_model()
     
     if success:
-        print("\n🎉 Integration test PASSED!")
-        print("✅ Our model is ready for Synth subnet deployment")
+        print("\nIntegration test PASSED!")
+        print("Our model is ready for Synth subnet deployment")
     else:
-        print("\n❌ Integration test FAILED!")
-        print("🔧 Need to fix issues before deployment")
+        print("\nIntegration test FAILED!")
+        print("Need to fix issues before deployment")

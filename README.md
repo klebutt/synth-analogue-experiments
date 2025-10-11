@@ -58,13 +58,52 @@ This repo bridges vision and practice.
 
 ---
 
-## Repo Structure
+## 🚀 Current Status
+
+### ✅ **Deployed & Running**
+- **Miner**: Running on DigitalOcean server (167.71.143.194)
+- **UID**: 233 on Synth subnet 50
+- **Stake**: 94.64 τ (recently staked +1 TAO)
+- **Model**: Ensemble (GBM-weighted) with CRPS ~547.30
+
+### 🚧 **In Progress**
+- **Dashboard**: Web interface for monitoring (needs fixing)
+- **Data Fetching**: Sequential SSH commands for reliability
+
+### 📊 **Key Metrics**
+- **Validator Requests**: 0 (waiting for requests)
+- **Wallet Balance**: ~1.1976 τ
+- **Miner Status**: Online and running
+
+## 📁 Repo Structure
 ```
 synth-analogue-experiments/
-├── notebooks/          # Jupyter notebooks for experiments and analysis
-├── models/            # Model implementations (baseline + analog-inspired)
-├── tests/             # Unit tests and validation
-├── docs/              # Documentation and research notes
-├── scripts/           # Utility scripts and automation
-└── requirements.txt   # Python dependencies
+├── custom_synth_miner.py      # Main miner implementation
+├── synth_integration.py       # Ensemble model integration
+├── miner_api.py              # Dashboard API (needs fixing)
+├── miner_dashboard.html      # Web dashboard
+├── models/                   # Prediction models
+│   ├── baseline/            # Random walk, GBM, mean reversion
+│   └── analog/              # Fluid dynamics models
+├── miner_monitoring_commands.md  # SSH command reference
+├── worklog_2025-10-11_final.md   # Development log
+└── synth-subnet/            # Official subnet code
+```
+
+## 🔧 Quick Start
+
+### **Check Miner Status**
+```bash
+ssh root@167.71.143.194 "pm2 status | grep custom-miner"
+```
+
+### **View Dashboard**
+```bash
+python miner_api.py  # Start API
+# Open http://localhost:5000
+```
+
+### **Monitor Logs**
+```bash
+ssh root@167.71.143.194 "pm2 logs custom-miner --follow"
 ```
