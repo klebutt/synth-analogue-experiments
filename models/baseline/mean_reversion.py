@@ -19,9 +19,9 @@ class MeanReversionModel:
     """
     
     def __init__(self, 
-                 mean_price: float = 50000.0,
-                 reversion_strength: float = 0.1,
-                 volatility: float = 0.02):
+                 mean_price: float = None,
+                 reversion_strength: float = None,
+                 volatility: float = None):
         """
         Initialize the mean reversion model.
         
@@ -30,9 +30,18 @@ class MeanReversionModel:
             reversion_strength: How strongly prices are pulled toward the mean (0-1)
             volatility: Random noise in the process
         """
-        self.mean_price = mean_price
-        self.reversion_strength = reversion_strength
-        self.volatility = volatility
+        if mean_price is None:
+            self.mean_price = 100000
+        else:
+            self.mean_price = mean_price
+        if reversion_strength is None:
+            self.reversion_strength = 0.1
+        else:
+            self.reversion_strength = reversion_strength
+        if volatility is None:
+            self.volatility = 0.02
+        else:
+            self.volatility = volatility
         self.name = "Mean Reversion Baseline"
         
     def predict(self, 
@@ -78,7 +87,7 @@ class MeanReversionModel:
                 # Calculate mean reversion force
                 reversion_force = self.reversion_strength * (self.mean_price - current_price)
                 
-                # Add random noise
+                # Add random noise (using direct 5-minute volatility)
                 random_shock = np.random.normal(0, self.volatility * current_price)
                 
                 # Update price

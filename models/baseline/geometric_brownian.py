@@ -18,7 +18,7 @@ class GeometricBrownianModel:
     which means percentage changes are normally distributed.
     """
     
-    def __init__(self, drift: float = 0.0, volatility: float = 0.02):
+    def __init__(self, drift: float = None, volatility: float = None):
         """
         Initialize the GBM model.
         
@@ -26,8 +26,14 @@ class GeometricBrownianModel:
             drift: Expected annual return rate (default: 0 = no trend)
             volatility: Annual volatility (standard deviation of returns)
         """
-        self.drift = drift
-        self.volatility = volatility
+        if drift is None:
+            self.drift = 0.0
+        else:
+            self.drift = drift
+        if volatility is None:
+            self.volatility = 0.02
+        else:
+            self.volatility = volatility
         self.name = "Geometric Brownian Motion Baseline"
         
     def predict(self, 
@@ -58,10 +64,10 @@ class GeometricBrownianModel:
         num_steps = int(time_horizon / time_increment)
         predictions = []
         
-        # Convert annual parameters to per-step parameters
-        dt = time_increment / (365 * 24 * 3600)  # Convert to years
-        mu = self.drift * dt
-        sigma = self.volatility * np.sqrt(dt)
+        # Use direct 5-minute volatility (no time scaling needed)
+        # For 5-minute predictions, volatility should be per-5-minute interval
+        mu = self.drift  # Drift per 5-minute interval
+        sigma = self.volatility  # Volatility per 5-minute interval
         
         for sim in range(num_simulations):
             path = []

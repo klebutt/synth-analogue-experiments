@@ -33,6 +33,8 @@ class EnsembleGBMWeightedModel:
     
     def __init__(self):
         self.name = "Ensemble (GBM-weighted)"
+        self.last_calibration = {}
+        self.cached_params = {}
         
         # Initialize individual models with optimized parameters
         self.models = {
@@ -48,7 +50,8 @@ class EnsembleGBMWeightedModel:
         # GBM-weighted ensemble (best performing configuration)
         self.weights = [0.2, 0.5, 0.3]  # [RW, GBM, MR]
         
-    def predict(self, 
+    def predict(self,
+                asset: str, 
                 start_price: float,
                 start_time: datetime,
                 time_increment: int = 300,  # 5 minutes
@@ -59,6 +62,20 @@ class EnsembleGBMWeightedModel:
         Returns format compatible with Synth subnet.
         """
         
+        # check if we need to calibrate
+        current_time = datetime.now()
+        needs_calibration = False
+        if asset not in self.last_calibration:
+            needs_calibration = True
+        else:
+            time_since_calibration = current_time - self.last_calibration[asset]
+            if time_since_calibration.total_seconds() > 6 * 3600:
+                needs_calibration = True
+
+        if needs_calibration:
+
+            pass
+
         # Update mean reversion model with current price
         self.models['MeanReversion'].mean_price = start_price
         
@@ -131,7 +148,7 @@ def generate_synth_simulations(
     start_time="",
     time_increment=300,
     time_length=86400,
-    num_simulations=100,
+    num_simulations=100,  # Official Synth subnet requirement
     sigma=0.01,  # Ignored - we use our own model
 ):
     """
@@ -189,7 +206,7 @@ def test_our_model():
     asset = "BTC"
     time_increment = 300  # 5 minutes
     time_length = 86400   # 24 hours
-    num_simulations = 100
+    num_simulations = 100   # Official Synth subnet requirement
     
     # Set start time to 1 hour from now (Synth subnet format)
     start_time = (datetime.now() + timedelta(hours=1)).isoformat()
