@@ -18,14 +18,17 @@ class RandomWalkModel:
     It's included as a baseline to compare against more sophisticated approaches.
     """
     
-    def __init__(self, volatility: float = 0.02):
+    def __init__(self, volatility: float = None):
         """
         Initialize the random walk model.
         
         Args:
             volatility: Standard deviation of price changes (as a fraction)
         """
-        self.volatility = volatility
+        if volatility is None:
+            self.volatility = 0.02 # fallback
+        else:
+            self.volatility = volatility
         self.name = "Random Walk Baseline"
         
     def predict(self, 

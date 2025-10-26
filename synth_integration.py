@@ -18,6 +18,7 @@ from models.baseline.random_walk import RandomWalkModel
 from models.baseline.geometric_brownian import GeometricBrownianModel
 from models.baseline.mean_reversion import MeanReversionModel
 from models.crps import CRPSCalculator
+from models.baseline.volatility_calculator import get_all_volatilities
 
 # Import Synth utilities
 sys.path.insert(0, os.path.join(project_root, 'synth-subnet'))
@@ -73,8 +74,18 @@ class EnsembleGBMWeightedModel:
                 needs_calibration = True
 
         if needs_calibration:
+            volatilities = get_all_volatilities()
+            self.cached_params[asset] = {
+                'volatility': volatilities[asset]['volatility'],
+                'drift': volatilities[asset]['drift']
+            }
+            self.last_calibration[asset] = current_time
 
-            pass
+            self.models['RandomWalk'].volatility = self.cached_params[asset]['volatility']
+            self.models['GBM'].drift = self.cached_params[asset]['drift']
+            self.models['GBM'].volatility = self.cached_params[asset]['volatility']
+            self.models['MeanReversion'].reversion_strength = 0.1
+            self.models['MeanReversion'].volatility = self.cached_params[asset]['volatility']
 
         # Update mean reversion model with current price
         self.models['MeanReversion'].mean_price = start_price
@@ -185,6 +196,7 @@ def generate_synth_simulations(
     
     # Generate predictions using our ensemble model
     predictions = model.predict(
+        asset=asset,
         start_price=current_price,
         start_time=start_datetime,
         time_increment=time_increment,
