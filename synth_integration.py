@@ -21,9 +21,10 @@ from models.crps import CRPSCalculator
 from models.baseline.volatility_calculator import get_all_volatilities
 
 # Import Synth utilities
-sys.path.insert(0, os.path.join(project_root, 'synth-subnet'))
-from synth.miner.price_simulation import get_asset_price
-from synth.utils.helpers import convert_prices_to_time_format
+synth_subnet_root = os.path.join(project_root, 'synth-subnet')
+sys.path.insert(0, synth_subnet_root)
+from synth.miner.price_simulation import get_asset_price  # type: ignore
+from synth.utils.helpers import convert_prices_to_time_format  # type: ignore
 
 
 class EnsembleGBMWeightedModel:
@@ -180,6 +181,7 @@ def generate_synth_simulations(
     if start_time == "":
         raise ValueError("Start time must be provided.")
     
+
     # Get current price from Synth's price feed
     current_price = get_asset_price(asset)
     if current_price is None:

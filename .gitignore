@@ -1,0 +1,21 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Editors/OS
+.DS_Store
+.idea/
+.vscode/
+
+# Binaries/Executables
+*.exe
+
+# PM2 logs/state (if ever committed locally)
+.pm2/
+
+
