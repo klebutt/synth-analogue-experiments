@@ -56,6 +56,7 @@ class EnsembleGBMWeightedModel:
                 asset: str, 
                 start_price: float,
                 start_time: datetime,
+                start_time_str: str = None,  # Original string format for exact matching
                 time_increment: int = 300,  # 5 minutes
                 time_horizon: int = 86400,  # 24 hours
                 num_simulations: int = 100) -> List[List[Dict[str, Any]]]:
@@ -118,9 +119,11 @@ class EnsembleGBMWeightedModel:
                 current_time = start_time + timedelta(seconds=step * time_increment)
                 
                 if step == 0:
-                    # Start time - use current price
+                    # Start time - use original string format for exact matching with validator
+                    # Validator requires first time point to match start_time string exactly
+                    first_time_str = start_time_str if start_time_str else current_time.isoformat()
                     simulation_predictions.append({
-                        'time': current_time.isoformat(),
+                        'time': first_time_str,
                         'price': start_price
                     })
                 else:
@@ -160,7 +163,7 @@ def generate_synth_simulations(
     start_time="",
     time_increment=300,
     time_length=86400,
-    num_simulations=100,  # Official Synth subnet requirement
+    num_simulations=1000,  # Validators request 1000 as of v1.5.0
     sigma=0.01,  # Ignored - we use our own model
 ):
     """
@@ -191,16 +194,22 @@ def generate_synth_simulations(
     model = EnsembleGBMWeightedModel()
     
     # Convert start_time to datetime (handle both string and datetime inputs)
+    # Handle 'Z' timezone format (replace with '+00:00' for fromisoformat)
     if isinstance(start_time, str):
-        start_datetime = datetime.fromisoformat(start_time)
+        start_time_normalized = start_time.replace('Z', '+00:00')
+        start_datetime = datetime.fromisoformat(start_time_normalized)
     else:
         start_datetime = start_time
     
     # Generate predictions using our ensemble model
+    # Pass original start_time string for exact format matching (validator requirement)
+    # Validator requires first time point to match start_time string character-for-character
+    original_start_time_str = start_time if isinstance(start_time, str) else start_datetime.isoformat()
     predictions = model.predict(
         asset=asset,
         start_price=current_price,
         start_time=start_datetime,
+        start_time_str=original_start_time_str,
         time_increment=time_increment,
         time_horizon=time_length,
         num_simulations=num_simulations
@@ -220,7 +229,7 @@ def test_our_model():
     asset = "BTC"
     time_increment = 300  # 5 minutes
     time_length = 86400   # 24 hours
-    num_simulations = 100   # Official Synth subnet requirement
+    num_simulations = 1000  # Validators request 1000 as of v1.5.0
     
     # Set start time to 1 hour from now (Synth subnet format)
     start_time = (datetime.now() + timedelta(hours=1)).isoformat()
