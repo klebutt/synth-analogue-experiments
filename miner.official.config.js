@@ -10,5 +10,17 @@ module.exports = {
       },
       cwd: "/root/synth-subnet",
     },
+    {
+      name: "synth-dashboard",
+      interpreter: "python3.11",
+      script: "/root/synth-analogue-experiments/dashboard/app.py",
+      env: {
+        PYTHONPATH: "/root/synth-analogue-experiments",
+        PREDICTION_LOG_PATH: "/root/prediction_log.jsonl",
+        FLASK_ENV: "production",
+      },
+      cwd: "/root/synth-analogue-experiments/dashboard",
+      watch: false,
+    },
   ],
 };

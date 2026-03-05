@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Synth Miner Dashboard</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --green: #3fb950;
+      --red: #f85149;
+      --yellow: #d29922;
+      --blue: #58a6ff;
+      --purple: #bc8cff;
+      --accent: #1f6feb;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 14px; }
+
+    /* ── Header ── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    header h1 { font-size: 18px; font-weight: 600; color: var(--blue); }
+    header h1 span { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 8px; }
+    #refresh-status { font-size: 12px; color: var(--muted); }
+    #refresh-status.loading { color: var(--yellow); }
+
+    /* ── Layout ── */
+    main { max-width: 1280px; margin: 0 auto; padding: 20px 24px; }
+
+    /* ── Status bar ── */
+    .status-bar {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+    .stat-card .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+    .stat-card .value { font-size: 22px; font-weight: 600; }
+    .stat-card .sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+    .online  { color: var(--green); }
+    .stopped { color: var(--red); }
+    .unknown { color: var(--yellow); }
+
+    /* ── Section headers ── */
+    .section { margin-bottom: 24px; }
+    .section-header {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      margin-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 6px;
+    }
+
+    /* ── Two-column grid ── */
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media(max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+
+    /* ── Table ── */
+    .table-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    th {
+      background: var(--bg);
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      padding: 8px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    td {
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+      color: var(--text);
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255,255,255,.02); }
+    .tag {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .tag-btc { background: #f7931a22; color: #f7931a; }
+    .tag-eth { background: #627eea22; color: #627eea; }
+    .tag-sol { background: #9945ff22; color: #9945ff; }
+    .tag-xau { background: #ffd70022; color: #ffd700; }
+    .tag-eq  { background: #3fb95022; color: #3fb950; }
+    .badge-pending { background: #d2992222; color: var(--yellow); font-size: 11px; padding: 2px 7px; border-radius: 10px; }
+    .badge-scored  { background: #3fb95022; color: var(--green);  font-size: 11px; padding: 2px 7px; border-radius: 10px; }
+    .up   { color: var(--green); }
+    .down { color: var(--red); }
+    .neutral { color: var(--muted); }
+
+    /* ── Accuracy strip ── */
+    .accuracy-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .acc-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+    .acc-card .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+    .acc-card .value { font-size: 26px; font-weight: 700; }
+    .acc-card .desc  { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+    /* ── Mini chart ── */
+    .sparkline { height: 40px; }
+
+    /* ── Log console ── */
+    .log-box {
+      background: #0a0e14;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 11px;
+      color: #7ee787;
+      height: 260px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .log-err { color: var(--red); }
+    .log-warn { color: var(--yellow); }
+    .log-info { color: #7ee787; }
+
+    /* ── Mini bar ── */
+    .mini-bar-wrap { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+    .mini-bar { height: 100%; border-radius: 3px; background: var(--accent); }
+
+    /* ── Empty state ── */
+    .empty { text-align: center; color: var(--muted); padding: 32px; font-size: 13px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Synth Miner Dashboard <span>UID 255 · Subnet 50 · Finney</span></h1>
+  <div id="refresh-status">Loading…</div>
+</header>
+
+<main>
+
+  <!-- ── Status bar ── -->
+  <div class="status-bar" id="status-bar">
+    <div class="stat-card"><div class="label">Miner Status</div><div class="value unknown" id="s-status">–</div><div class="sub" id="s-uptime">–</div></div>
+    <div class="stat-card"><div class="label">Requests (24h)</div><div class="value" id="s-req24">–</div><div class="sub" id="s-req1h">– in last hour</div></div>
+    <div class="stat-card"><div class="label">Total Logged</div><div class="value" id="s-total">–</div><div class="sub">prediction records</div></div>
+    <div class="stat-card"><div class="label">Memory</div><div class="value" id="s-mem">–</div><div class="sub" id="s-cpu">– CPU</div></div>
+    <div class="stat-card"><div class="label">Restarts</div><div class="value" id="s-restarts">–</div><div class="sub">PM2 restarts</div></div>
+  </div>
+
+  <!-- ── Accuracy strip ── -->
+  <div class="section">
+    <div class="section-header">Accuracy (completed windows)</div>
+    <div class="accuracy-row">
+      <div class="acc-card">
+        <div class="label">Avg Price Error</div>
+        <div class="value" id="a-mae">–</div>
+        <div class="desc">Mean absolute error vs actual price</div>
+      </div>
+      <div class="acc-card">
+        <div class="label">Direction Accuracy</div>
+        <div class="value" id="a-dir">–</div>
+        <div class="desc">% of 24h forecasts with correct up/down direction</div>
+      </div>
+      <div class="acc-card">
+        <div class="label">Scored Windows</div>
+        <div class="value" id="a-scored">–</div>
+        <div class="desc">Completed forecast windows evaluated</div>
+      </div>
+      <div class="acc-card">
+        <div class="label">Assets Seen</div>
+        <div class="value" id="a-assets">–</div>
+        <div class="desc">Distinct assets requested by validators</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Two-column: predictions table + log ── -->
+  <div class="two-col section">
+
+    <!-- Predictions table -->
+    <div>
+      <div class="section-header">Recent Predictions</div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Asset</th>
+              <th>Price at request</th>
+              <th>Predicted (mean)</th>
+              <th>Actual</th>
+              <th>Error</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="pred-tbody">
+            <tr><td colspan="7" class="empty">Loading predictions…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Live log -->
+    <div>
+      <div class="section-header">Live Miner Log</div>
+      <div class="log-box" id="log-box">Loading logs…</div>
+    </div>
+
+  </div>
+
+</main>
+
+<script>
+  // ── Helpers ──────────────────────────────────────────────────────────────
+
+  function fmtTime(iso) {
+    if (!iso) return '–';
+    try {
+      const d = new Date(iso);
+      return d.toLocaleString(undefined, { month: 'short', day: 'numeric',
+        hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    } catch { return iso; }
+  }
+
+  function fmtPrice(v, asset) {
+    if (v == null) return '–';
+    const sym = asset === 'XAU' ? '$' : (asset === 'BTC' ? '$' : '$');
+    if (v > 1000) return sym + v.toLocaleString(undefined, { maximumFractionDigits: 0 });
+    return sym + v.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  }
+
+  function assetTag(asset) {
+    const map = { BTC: 'tag-btc', ETH: 'tag-eth', SOL: 'tag-sol', XAU: 'tag-xau' };
+    const cls = map[asset] || 'tag-eq';
+    return `<span class="tag ${cls}">${asset}</span>`;
+  }
+
+  function colorPct(pct) {
+    if (pct == null) return '–';
+    const s = pct.toFixed(3) + '%';
+    if (pct < 0.5)  return `<span class="up">${s}</span>`;
+    if (pct < 2.0)  return `<span class="neutral">${s}</span>`;
+    return `<span class="down">${s}</span>`;
+  }
+
+  // ── Fetch & render ────────────────────────────────────────────────────────
+
+  async function fetchStatus() {
+    const r = await fetch('/api/status');
+    return r.json();
+  }
+
+  async function fetchPredictions() {
+    const r = await fetch('/api/predictions');
+    return r.json();
+  }
+
+  async function fetchLogs() {
+    const r = await fetch('/api/logs');
+    return r.json();
+  }
+
+  function renderStatus(status, preds) {
+    const pm2 = status.pm2 || {};
+    const statusEl = document.getElementById('s-status');
+    statusEl.textContent = (pm2.status || '–').toUpperCase();
+    statusEl.className = 'value ' + (pm2.status === 'online' ? 'online' : pm2.status === 'stopped' ? 'stopped' : 'unknown');
+    document.getElementById('s-uptime').textContent = 'Uptime: ' + (pm2.uptime || '–') + '  ·  PID ' + (pm2.pid || '–');
+    document.getElementById('s-req24').textContent  = status.requests_24h ?? '–';
+    document.getElementById('s-req1h').textContent  = (status.requests_1h ?? '–') + ' in last hour';
+    document.getElementById('s-total').textContent  = preds.stats?.total_logged ?? '–';
+    document.getElementById('s-mem').textContent    = (pm2.memory_mb ?? '–') + ' MB';
+    document.getElementById('s-cpu').textContent    = (pm2.cpu_pct ?? '–') + '% CPU';
+    document.getElementById('s-restarts').textContent = pm2.restarts ?? '–';
+  }
+
+  function renderAccuracy(stats) {
+    document.getElementById('a-mae').textContent    = stats.avg_mae_pct != null ? stats.avg_mae_pct.toFixed(3) + '%' : 'Pending';
+    document.getElementById('a-dir').textContent    = stats.direction_accuracy_pct != null ? stats.direction_accuracy_pct.toFixed(1) + '%' : 'Pending';
+    document.getElementById('a-scored').textContent = stats.scored_count ?? 0;
+    document.getElementById('a-assets').textContent = (stats.assets || []).join(', ') || '–';
+  }
+
+  function renderPredictions(records) {
+    const tbody = document.getElementById('pred-tbody');
+    if (!records || records.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" class="empty">No predictions logged yet — waiting for first validator request…</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = records.slice(0, 30).map(r => {
+      const meanStart = r.mean_path ? r.mean_path[0] : null;
+      const meanEnd   = r.mean_path ? r.mean_path[r.mean_path.length - 1] : null;
+      const actual    = r.actual_start_price;
+      const scored    = r.scored;
+      const badge     = scored
+        ? '<span class="badge-scored">Scored</span>'
+        : '<span class="badge-pending">Pending</span>';
+
+      // Show predicted end price vs start price direction
+      let predCell = fmtPrice(meanStart, r.asset);
+      if (meanEnd != null && meanStart != null) {
+        const dir = meanEnd > meanStart ? '▲' : '▼';
+        const cls = meanEnd > meanStart ? 'up' : 'down';
+        predCell += ` <span class="${cls}" style="font-size:11px">${dir} ${fmtPrice(meanEnd, r.asset)}</span>`;
+      }
+
+      return `<tr>
+        <td style="color:var(--muted);font-size:12px">${fmtTime(r.logged_at)}</td>
+        <td>${assetTag(r.asset)}</td>
+        <td>${fmtPrice(r.price_at_request, r.asset)}</td>
+        <td>${predCell}</td>
+        <td>${actual != null ? fmtPrice(actual, r.asset) : '<span class="neutral">–</span>'}</td>
+        <td>${colorPct(r.mae_pct)}</td>
+        <td>${badge}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function renderLogs(lines) {
+    const box = document.getElementById('log-box');
+    if (!lines || lines.length === 0) {
+      box.textContent = 'No log output available.';
+      return;
+    }
+    box.innerHTML = lines.map(line => {
+      if (/error|exception|traceback/i.test(line))
+        return `<span class="log-err">${escHtml(line)}</span>`;
+      if (/warning|warn/i.test(line))
+        return `<span class="log-warn">${escHtml(line)}</span>`;
+      return `<span class="log-info">${escHtml(line)}</span>`;
+    }).join('\n');
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // ── Main refresh loop ─────────────────────────────────────────────────────
+
+  async function refresh() {
+    const el = document.getElementById('refresh-status');
+    el.textContent = 'Refreshing…';
+    el.className = 'loading';
+    try {
+      const [status, preds, logs] = await Promise.all([
+        fetchStatus(), fetchPredictions(), fetchLogs()
+      ]);
+      renderStatus(status, preds);
+      renderAccuracy(preds.stats || {});
+      renderPredictions(preds.records || []);
+      renderLogs(logs.lines || []);
+      el.textContent = 'Updated ' + new Date().toLocaleTimeString();
+      el.className = '';
+    } catch(e) {
+      el.textContent = 'Error: ' + e.message;
+      el.className = 'loading';
+    }
+  }
+
+  refresh();
+  setInterval(refresh, 60000); // auto-refresh every 60 seconds
+</script>
+</body>
+</html>

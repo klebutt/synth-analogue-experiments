@@ -5,6 +5,7 @@ Integrates our best-performing Ensemble (GBM-weighted) model with Synth subnet
 
 import sys
 import os
+import json
 import numpy as np
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
@@ -236,8 +237,66 @@ def generate_synth_simulations(
         time_horizon=time_length,
         num_simulations=num_simulations
     )
-    
+
+    _log_prediction(
+        asset=asset,
+        start_time=original_start_time_str,
+        time_increment=time_increment,
+        time_length=time_length,
+        num_simulations=num_simulations,
+        price_at_request=current_price,
+        predictions=predictions,
+    )
+
     return predictions
+
+
+def _log_prediction(asset, start_time, time_increment, time_length,
+                    num_simulations, price_at_request, predictions):
+    """
+    Append a compact prediction record to /root/prediction_log.jsonl.
+    Stores mean path + p10/p90 envelopes rather than all 1000 simulations
+    to keep file size manageable (~50 KB per record).
+    """
+    try:
+        log_path = os.environ.get("PREDICTION_LOG_PATH", "/root/prediction_log.jsonl")
+
+        prices_array = np.array(
+            [[step["price"] for step in sim] for sim in predictions]
+        )  # shape: (num_simulations, num_steps)
+
+        mean_path = np.mean(prices_array, axis=0).tolist()
+        p10_path = np.percentile(prices_array, 10, axis=0).tolist()
+        p90_path = np.percentile(prices_array, 90, axis=0).tolist()
+
+        # Derive the end of the forecast window so the dashboard knows when
+        # actual prices will be available for scoring.
+        try:
+            st = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
+            end_time = (st + timedelta(seconds=time_length)).isoformat()
+        except Exception:
+            end_time = None
+
+        record = {
+            "logged_at": datetime.utcnow().isoformat(),
+            "asset": asset,
+            "start_time": start_time,
+            "end_time": end_time,
+            "time_increment": time_increment,
+            "time_length": time_length,
+            "num_simulations": num_simulations,
+            "price_at_request": price_at_request,
+            "mean_path": mean_path,
+            "p10_path": p10_path,
+            "p90_path": p90_path,
+        }
+
+        with open(log_path, "a") as f:
+            f.write(json.dumps(record) + "\n")
+
+    except Exception as e:
+        # Never let logging crash the miner
+        print(f"[prediction_log] Warning: could not write log entry: {e}")
 
 
 def test_our_model():
