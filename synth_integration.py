@@ -27,6 +27,22 @@ from synth.miner.price_simulation import get_asset_price  # type: ignore
 from synth.utils.helpers import convert_prices_to_time_format  # type: ignore
 
 
+# Fallback sigma values sourced from the official synth-subnet SIGMA_MAP.
+# Used when live Yahoo Finance calibration fails (e.g. market closed, API error,
+# or asset not yet supported by volatility_calculator).
+FALLBACK_SIGMA = {
+    "BTC": 0.00472,
+    "ETH": 0.00695,
+    "XAU": 0.00208,
+    "SOL": 0.00782,
+    "SPYX": 0.00156,
+    "NVDAX": 0.00342,
+    "TSLAX": 0.00332,
+    "AAPLX": 0.00250,
+    "GOOGLX": 0.00332,
+}
+
+
 class EnsembleGBMWeightedModel:
     """
     Our best-performing ensemble model with GBM weighting.
@@ -77,10 +93,16 @@ class EnsembleGBMWeightedModel:
 
         if needs_calibration:
             volatilities = get_all_volatilities()
-            self.cached_params[asset] = {
-                'volatility': volatilities[asset]['volatility'],
-                'drift': volatilities[asset]['drift']
-            }
+            if asset in volatilities:
+                self.cached_params[asset] = {
+                    'volatility': volatilities[asset]['volatility'],
+                    'drift': volatilities[asset]['drift']
+                }
+            else:
+                self.cached_params[asset] = {
+                    'volatility': FALLBACK_SIGMA.get(asset, 0.005),
+                    'drift': 0.0
+                }
             self.last_calibration[asset] = current_time
 
             self.models['RandomWalk'].volatility = self.cached_params[asset]['volatility']

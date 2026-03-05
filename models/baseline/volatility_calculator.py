@@ -24,12 +24,17 @@ def get_volatility(time, ticker):
         print(f"Error fetching {ticker}: {e}")
         return None
 
-# Asset ticker mapping
+# Asset ticker mapping — covers all 9 Synth subnet assets
 ASSET_TICKERS = {
     "BTC": "BTC-USD",
-    "ETH": "ETH-USD", 
+    "ETH": "ETH-USD",
     "SOL": "SOL-USD",
-    "XAU": "GC=F"
+    "XAU": "GC=F",
+    "SPYX": "SPY",
+    "NVDAX": "NVDA",
+    "TSLAX": "TSLA",
+    "AAPLX": "AAPL",
+    "GOOGLX": "GOOGL",
 }
 
 def get_all_volatilities(period="2d"):
