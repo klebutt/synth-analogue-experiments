@@ -26,6 +26,14 @@ _chart_cache: dict = {}
 _chart_cache_ts: datetime | None = None
 CHART_CACHE_TTL = 300  # seconds
 
+# Cache for /api/chain (metagraph query is slow — refresh every 10 min)
+_chain_cache: dict = {}
+_chain_cache_ts: datetime | None = None
+CHAIN_CACHE_TTL = 600  # seconds
+
+MINER_UID = 255
+NETUID = 50
+
 # Yahoo Finance ticker map — mirrors volatility_calculator.py
 ASSET_TICKERS = {
     "BTC": "BTC-USD",
@@ -398,6 +406,64 @@ def api_charts():
 
     _chart_cache = result
     _chart_cache_ts = now
+    return jsonify(result)
+
+
+@app.route("/api/chain")
+def api_chain():
+    """
+    Return on-chain metagraph stats for this miner (UID 255, netuid 50).
+    Cached for CHAIN_CACHE_TTL seconds — metagraph sync is slow (~10-20s).
+    """
+    global _chain_cache, _chain_cache_ts
+    now = datetime.now(timezone.utc)
+
+    if (
+        _chain_cache
+        and _chain_cache_ts is not None
+        and (now - _chain_cache_ts).total_seconds() < CHAIN_CACHE_TTL
+    ):
+        return jsonify(_chain_cache)
+
+    try:
+        import bittensor as bt  # imported here — not needed for other routes
+
+        subtensor = bt.subtensor("finney")
+        mg = subtensor.metagraph(NETUID)
+        uid = MINER_UID
+
+        def _f(arr, idx, decimals=6):
+            """Safely index a metagraph array and round."""
+            try:
+                return round(float(arr[idx]), decimals)
+            except Exception:
+                return None
+
+        result = {
+            "uid": uid,
+            "netuid": NETUID,
+            "active": bool(mg.active[uid]) if hasattr(mg, "active") else None,
+            "stake": _f(mg.S, uid, 4),
+            "rank": _f(mg.R, uid, 6),
+            "trust": _f(mg.T, uid, 6),
+            "consensus": _f(mg.C, uid, 6),
+            "incentive": _f(mg.I, uid, 6),
+            "emission": _f(mg.E, uid, 6),
+            "dividends": _f(mg.D, uid, 6),
+            "last_update": int(mg.last_update[uid]) if hasattr(mg, "last_update") else None,
+            "fetched_at": now.isoformat(),
+            "error": None,
+        }
+    except Exception as exc:
+        result = {
+            "uid": MINER_UID,
+            "netuid": NETUID,
+            "error": str(exc),
+            "fetched_at": now.isoformat(),
+        }
+
+    _chain_cache = result
+    _chain_cache_ts = now
     return jsonify(result)
 
 
