@@ -164,6 +164,52 @@
 
     /* ── Empty state ── */
     .empty { text-align: center; color: var(--muted); padding: 32px; font-size: 13px; }
+
+    /* ── Price charts grid ── */
+    .chart-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+    }
+    @media (max-width: 1100px) { .chart-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 640px)  { .chart-grid { grid-template-columns: 1fr; } }
+
+    .chart-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px 8px;
+    }
+    .chart-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .chart-asset-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .chart-legend {
+      display: flex;
+      gap: 10px;
+      font-size: 11px;
+      color: var(--muted);
+      align-items: center;
+    }
+    .chart-legend span { display: flex; align-items: center; gap: 4px; }
+    .legend-dot { width: 20px; height: 2px; display: inline-block; border-radius: 1px; }
+    .legend-dot.actual   { background: var(--asset-color, #58a6ff); }
+    .legend-dot.pred     { background: #d29922; border-top: 2px dashed #d29922; height: 0; }
+    .chart-loading {
+      height: 160px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: 12px;
+    }
   </style>
 </head>
 <body>
@@ -243,6 +289,17 @@
       <div class="log-box" id="log-box">Loading logs…</div>
     </div>
 
+  </div>
+
+  <!-- ── Per-asset price charts ── -->
+  <div class="section">
+    <div class="section-header">
+      Price Charts — Predicted vs Actual (48 h)
+      <span style="float:right;font-size:11px;font-weight:400;text-transform:none;letter-spacing:0" id="chart-refresh-status"></span>
+    </div>
+    <div class="chart-grid" id="charts-grid">
+      <div class="chart-loading" style="grid-column:1/-1">Loading charts…</div>
+    </div>
   </div>
 
 </main>
@@ -398,6 +455,209 @@
 
   refresh();
   setInterval(refresh, 60000); // auto-refresh every 60 seconds
+</script>
+
+<!-- Chart.js + date-fns time adapter -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+
+<script>
+  // ── Per-asset colour palette ─────────────────────────────────────────────
+  const ASSET_COLORS = {
+    BTC:    '#f7931a',
+    ETH:    '#627eea',
+    SOL:    '#9945ff',
+    XAU:    '#ffd700',
+    SPYX:   '#3fb950',
+    NVDAX:  '#58a6ff',
+    TSLAX:  '#f85149',
+    AAPLX:  '#79c0ff',
+    GOOGLX: '#d29922',
+  };
+
+  // Preferred display order
+  const ASSET_ORDER = ['BTC', 'ETH', 'SOL', 'XAU', 'SPYX', 'NVDAX', 'TSLAX', 'AAPLX', 'GOOGLX'];
+
+  const _chartInstances = {};
+
+  function buildChartCard(asset) {
+    const color = ASSET_COLORS[asset] || '#8b949e';
+    const card = document.createElement('div');
+    card.className = 'chart-card';
+    card.id = `chart-card-${asset}`;
+    card.style.setProperty('--asset-color', color);
+    card.innerHTML = `
+      <div class="chart-card-header">
+        <span class="chart-asset-name">${asset}</span>
+        <span class="chart-legend">
+          <span><span class="legend-dot actual"></span>Actual</span>
+          <span><span class="legend-dot pred"></span>Predicted</span>
+        </span>
+      </div>
+      <canvas id="chart-canvas-${asset}" height="160"></canvas>`;
+    return card;
+  }
+
+  function renderAssetChart(asset, data, color) {
+    const existing = _chartInstances[asset];
+    if (existing) { existing.destroy(); delete _chartInstances[asset]; }
+
+    const ctx = document.getElementById(`chart-canvas-${asset}`);
+    if (!ctx) return;
+
+    const toPoints = arr => (arr || []).map(p => ({ x: new Date(p.t), y: p.price }));
+
+    const actualPts    = toPoints(data.actual);
+    const predictedPts = toPoints(data.predicted);
+    const p10Pts       = toPoints(data.p10);
+    const p90Pts       = toPoints(data.p90);
+
+    _chartInstances[asset] = new Chart(ctx, {
+      type: 'line',
+      data: {
+        datasets: [
+          {
+            label: 'P10',
+            data: p10Pts,
+            borderColor: 'transparent',
+            backgroundColor: 'transparent',
+            borderWidth: 0,
+            pointRadius: 0,
+            fill: false,
+            order: 4,
+          },
+          {
+            label: 'P90',
+            data: p90Pts,
+            borderColor: 'transparent',
+            backgroundColor: `${color}18`,
+            borderWidth: 0,
+            pointRadius: 0,
+            fill: '-1',   // fill down to P10 dataset
+            order: 3,
+          },
+          {
+            label: 'Predicted',
+            data: predictedPts,
+            borderColor: '#d29922',
+            backgroundColor: 'transparent',
+            borderWidth: 1.5,
+            borderDash: [5, 4],
+            pointRadius: 0,
+            tension: 0.2,
+            order: 2,
+          },
+          {
+            label: 'Actual',
+            data: actualPts,
+            borderColor: color,
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            pointRadius: 0,
+            tension: 0.2,
+            order: 1,
+          },
+        ],
+      },
+      options: {
+        animation: false,
+        responsive: true,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#161b22',
+            borderColor: '#30363d',
+            borderWidth: 1,
+            titleColor: '#8b949e',
+            bodyColor: '#e6edf3',
+            callbacks: {
+              label: ctx => {
+                if (ctx.dataset.label === 'P10' || ctx.dataset.label === 'P90') return null;
+                const v = ctx.parsed.y;
+                if (v == null) return null;
+                const fmt = v > 1000
+                  ? '$' + v.toLocaleString(undefined, { maximumFractionDigits: 0 })
+                  : '$' + v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                return `${ctx.dataset.label}: ${fmt}`;
+              },
+            },
+          },
+        },
+        scales: {
+          x: {
+            type: 'time',
+            time: {
+              displayFormats: { hour: 'HH:mm', day: 'MMM d' },
+              tooltipFormat: 'MMM d, HH:mm',
+            },
+            grid: { color: '#30363d' },
+            ticks: { color: '#8b949e', maxTicksLimit: 5, font: { size: 10 } },
+          },
+          y: {
+            grid: { color: '#30363d' },
+            ticks: {
+              color: '#8b949e',
+              font: { size: 10 },
+              callback: v => v > 1000
+                ? '$' + v.toLocaleString(undefined, { maximumFractionDigits: 0 })
+                : '$' + v.toLocaleString(undefined, { maximumFractionDigits: 2 }),
+            },
+          },
+        },
+      },
+    });
+  }
+
+  async function refreshCharts() {
+    const statusEl = document.getElementById('chart-refresh-status');
+    if (statusEl) { statusEl.textContent = 'Updating…'; statusEl.style.color = 'var(--yellow)'; }
+
+    try {
+      const r = await fetch('/api/charts');
+      const data = await r.json();
+
+      const grid = document.getElementById('charts-grid');
+
+      // Build cards in preferred order, then any extra assets not in the order list
+      const assetsInData = Object.keys(data);
+      const ordered = [...ASSET_ORDER.filter(a => assetsInData.includes(a)),
+                       ...assetsInData.filter(a => !ASSET_ORDER.includes(a))];
+
+      if (ordered.length === 0) {
+        grid.innerHTML = '<div class="chart-loading" style="grid-column:1/-1">No predictions logged yet — waiting for data…</div>';
+        return;
+      }
+
+      // Add any missing cards in the right order
+      ordered.forEach(asset => {
+        if (!document.getElementById(`chart-card-${asset}`)) {
+          grid.innerHTML = ''; // rebuild order from scratch
+        }
+      });
+
+      if (!document.getElementById(`chart-card-${ordered[0]}`)) {
+        grid.innerHTML = '';
+        ordered.forEach(asset => grid.appendChild(buildChartCard(asset)));
+      }
+
+      ordered.forEach(asset => {
+        const color = ASSET_COLORS[asset] || '#8b949e';
+        renderAssetChart(asset, data[asset], color);
+      });
+
+      if (statusEl) {
+        statusEl.textContent = 'Updated ' + new Date().toLocaleTimeString();
+        statusEl.style.color = 'var(--muted)';
+      }
+    } catch (e) {
+      if (statusEl) { statusEl.textContent = 'Chart error: ' + e.message; statusEl.style.color = 'var(--red)'; }
+    }
+  }
+
+  // Initial load + refresh every 5 minutes
+  refreshCharts();
+  setInterval(refreshCharts, 5 * 60 * 1000);
 </script>
 </body>
 </html>

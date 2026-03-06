@@ -21,6 +21,11 @@ app = Flask(__name__)
 PREDICTION_LOG = os.environ.get("PREDICTION_LOG_PATH", "/root/prediction_log.jsonl")
 MAX_RECORDS = 200  # keep the last N log records in memory
 
+# Simple in-memory cache for /api/charts (yfinance is slow — refresh every 5 min)
+_chart_cache: dict = {}
+_chart_cache_ts: datetime | None = None
+CHART_CACHE_TTL = 300  # seconds
+
 # Yahoo Finance ticker map — mirrors volatility_calculator.py
 ASSET_TICKERS = {
     "BTC": "BTC-USD",
@@ -279,6 +284,115 @@ def api_predictions():
 def api_logs():
     """Return recent miner PM2 log lines."""
     return jsonify({"lines": tail_pm2_logs(60)})
+
+
+@app.route("/api/charts")
+def api_charts():
+    """
+    For each asset, return the most recent prediction's mean/p10/p90 paths as
+    timestamped series, plus 48 hours of actual price history from yfinance.
+    Results are cached for CHART_CACHE_TTL seconds to avoid hammering yfinance.
+    """
+    global _chart_cache, _chart_cache_ts
+    now = datetime.now(timezone.utc)
+
+    if (
+        _chart_cache
+        and _chart_cache_ts is not None
+        and (now - _chart_cache_ts).total_seconds() < CHART_CACHE_TTL
+    ):
+        return jsonify(_chart_cache)
+
+    cutoff_48h = now - timedelta(hours=48)
+    records = load_prediction_log()
+
+    # Find the most recent prediction per asset within the last 48 hours
+    latest_per_asset: dict = {}
+    for rec in records:
+        asset = rec.get("asset")
+        if not asset:
+            continue
+        try:
+            logged_at = datetime.fromisoformat(rec.get("logged_at", "").replace("Z", "+00:00"))
+        except Exception:
+            continue
+        if logged_at < cutoff_48h:
+            continue
+        existing = latest_per_asset.get(asset)
+        if existing is None:
+            latest_per_asset[asset] = rec
+        else:
+            try:
+                existing_dt = datetime.fromisoformat(existing.get("logged_at", "").replace("Z", "+00:00"))
+                if logged_at > existing_dt:
+                    latest_per_asset[asset] = rec
+            except Exception:
+                pass
+
+    result: dict = {}
+
+    for asset, rec in latest_per_asset.items():
+        ticker = ASSET_TICKERS.get(asset)
+        if not ticker:
+            continue
+
+        start_time_str = rec.get("start_time", "")
+        time_increment = rec.get("time_increment", 300)
+        mean_path = rec.get("mean_path") or []
+        p10_path = rec.get("p10_path") or []
+        p90_path = rec.get("p90_path") or []
+
+        if not mean_path or not start_time_str:
+            continue
+
+        try:
+            start_dt = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
+        except Exception:
+            continue
+
+        def _to_series(path):
+            return [
+                {"t": (start_dt + timedelta(seconds=i * time_increment)).isoformat(), "price": round(float(p), 4)}
+                for i, p in enumerate(path)
+            ]
+
+        predicted = _to_series(mean_path)
+        p10_series = _to_series(p10_path)
+        p90_series = _to_series(p90_path)
+
+        # Fetch 48 h of 1-hour actual price bars
+        actual = []
+        try:
+            df = yf.download(
+                ticker,
+                start=cutoff_48h,
+                end=now,
+                interval="1h",
+                progress=False,
+                auto_adjust=True,
+            )
+            if not df.empty:
+                close = df["Close"]
+                # Handle multi-level columns (newer yfinance versions)
+                if hasattr(close, "columns"):
+                    close = close.iloc[:, 0]
+                for ts, price in close.items():
+                    if hasattr(ts, "isoformat"):
+                        actual.append({"t": ts.isoformat(), "price": round(float(price), 4)})
+        except Exception:
+            pass
+
+        result[asset] = {
+            "predicted": predicted,
+            "p10": p10_series,
+            "p90": p90_series,
+            "actual": actual,
+            "start_time": start_time_str,
+        }
+
+    _chart_cache = result
+    _chart_cache_ts = now
+    return jsonify(result)
 
 
 if __name__ == "__main__":
