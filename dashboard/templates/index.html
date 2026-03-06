@@ -261,7 +261,7 @@
       <div class="chain-card"><div class="label">Validator Trust</div><div class="value" id="c-vtrust">–</div><div class="sub">Trust assigned by validators</div></div>
       <div class="chain-card"><div class="label">Pruning Score</div><div class="value" id="c-pruning">–</div><div class="sub">Lower = more at risk</div></div>
       <div class="chain-card"><div class="label">Consensus</div><div class="value" id="c-consensus">–</div><div class="sub">Agreement with peers</div></div>
-      <div class="chain-card"><div class="label">Stake</div><div class="value" id="c-stake">–</div><div class="sub">TAO staked to miner</div></div>
+      <div class="chain-card"><div class="label">Alpha Stake</div><div class="value" id="c-stake">–</div><div class="sub">Subnet alpha tokens (not TAO)</div></div>
     </div>
   </div>
 
@@ -496,7 +496,7 @@
     if (stakeEl) {
       if (d.stake == null) { stakeEl.textContent = '–'; stakeEl.className = 'value'; }
       else {
-        stakeEl.textContent = d.stake.toLocaleString(undefined, { maximumFractionDigits: 2 }) + ' τ';
+        stakeEl.textContent = d.stake.toLocaleString(undefined, { maximumFractionDigits: 2 }) + ' ש';
         stakeEl.className = 'value ' + (d.stake > 0 ? 'nonzero' : 'zero');
       }
     }
