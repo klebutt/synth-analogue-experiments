@@ -428,7 +428,7 @@ def api_chain():
     try:
         import bittensor as bt  # imported here — not needed for other routes
 
-        subtensor = bt.subtensor("finney")
+        subtensor = bt.Subtensor("finney")
         mg = subtensor.metagraph(NETUID)
         uid = MINER_UID
 
