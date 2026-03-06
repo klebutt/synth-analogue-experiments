@@ -256,12 +256,12 @@
       <span style="float:right;font-size:11px;font-weight:400;text-transform:none;letter-spacing:0" id="chain-refresh-status"></span>
     </div>
     <div class="chain-row">
-      <div class="chain-card"><div class="label">Incentive</div><div class="value" id="c-incentive">–</div><div class="sub">Validator weight score</div></div>
-      <div class="chain-card"><div class="label">Emission</div><div class="value" id="c-emission">–</div><div class="sub">TAO per block</div></div>
-      <div class="chain-card"><div class="label">Trust</div><div class="value" id="c-trust">–</div><div class="sub">Validator trust score</div></div>
-      <div class="chain-card"><div class="label">Rank</div><div class="value" id="c-rank">–</div><div class="sub">Position in subnet</div></div>
+      <div class="chain-card"><div class="label">Incentive</div><div class="value" id="c-incentive">–</div><div class="sub">Weight from validators</div></div>
+      <div class="chain-card"><div class="label">Emission</div><div class="value" id="c-emission">–</div><div class="sub">TAO earned per block</div></div>
+      <div class="chain-card"><div class="label">Validator Trust</div><div class="value" id="c-vtrust">–</div><div class="sub">Trust assigned by validators</div></div>
+      <div class="chain-card"><div class="label">Pruning Score</div><div class="value" id="c-pruning">–</div><div class="sub">Lower = more at risk</div></div>
       <div class="chain-card"><div class="label">Consensus</div><div class="value" id="c-consensus">–</div><div class="sub">Agreement with peers</div></div>
-      <div class="chain-card"><div class="label">Stake</div><div class="value" id="c-stake">–</div><div class="sub">TAO staked</div></div>
+      <div class="chain-card"><div class="label">Stake</div><div class="value" id="c-stake">–</div><div class="sub">TAO staked to miner</div></div>
     </div>
   </div>
 
@@ -485,11 +485,11 @@
       el.className = 'value ' + (val > 0 ? 'nonzero' : 'zero');
     }
 
-    setChainVal('c-incentive', d.incentive, 6);
-    setChainVal('c-emission',  d.emission,  6);
-    setChainVal('c-trust',     d.trust,     4);
-    setChainVal('c-rank',      d.rank,      6);
-    setChainVal('c-consensus', d.consensus, 4);
+    setChainVal('c-incentive', d.incentive,       6);
+    setChainVal('c-emission',  d.emission,        6);
+    setChainVal('c-vtrust',    d.validator_trust, 4);
+    setChainVal('c-pruning',   d.pruning_score,   6);
+    setChainVal('c-consensus', d.consensus,       4);
 
     // Stake shown as integer TAO
     const stakeEl = document.getElementById('c-stake');
