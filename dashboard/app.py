@@ -314,6 +314,8 @@ def api_charts():
             continue
         try:
             logged_at = datetime.fromisoformat(rec.get("logged_at", "").replace("Z", "+00:00"))
+            if logged_at.tzinfo is None:
+                logged_at = logged_at.replace(tzinfo=timezone.utc)
         except Exception:
             continue
         if logged_at < cutoff_48h:
@@ -324,6 +326,8 @@ def api_charts():
         else:
             try:
                 existing_dt = datetime.fromisoformat(existing.get("logged_at", "").replace("Z", "+00:00"))
+                if existing_dt.tzinfo is None:
+                    existing_dt = existing_dt.replace(tzinfo=timezone.utc)
                 if logged_at > existing_dt:
                     latest_per_asset[asset] = rec
             except Exception:
@@ -347,6 +351,8 @@ def api_charts():
 
         try:
             start_dt = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
+            if start_dt.tzinfo is None:
+                start_dt = start_dt.replace(tzinfo=timezone.utc)
         except Exception:
             continue
 
