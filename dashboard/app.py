@@ -459,6 +459,53 @@ def api_charts():
     return jsonify(result)
 
 
+@app.route("/api/debug-scoring")
+def api_debug_scoring():
+    """Temporary debug: show individual scored record values to diagnose high MAE."""
+    now = datetime.now(timezone.utc)
+    all_records = load_prediction_log(MAX_RECORDS_STATS)
+
+    completed_scoring = []
+    for rec in all_records:
+        if rec.get("asset") not in SCORING_ASSETS:
+            continue
+        end_iso = rec.get("end_time", "")
+        try:
+            end_dt = datetime.fromisoformat(end_iso.replace("Z", "+00:00"))
+            if end_dt.tzinfo is None:
+                end_dt = end_dt.replace(tzinfo=timezone.utc)
+            if end_dt < now - timedelta(minutes=10):
+                completed_scoring.append(rec)
+        except Exception:
+            pass
+
+    results = []
+    for rec in completed_scoring[-30:]:
+        asset = rec.get("asset")
+        end_iso = rec.get("end_time", "")
+        mean_path = rec.get("mean_path", [])
+        price_at_req = rec.get("price_at_request")
+        pred_end = float(mean_path[-1]) if mean_path else None
+
+        actual_end = fetch_actual_price(asset, end_iso)
+        mae_pct = None
+        if actual_end is not None and actual_end > 0 and pred_end is not None:
+            mae_pct = round(abs(pred_end - actual_end) / actual_end * 100, 4)
+
+        results.append({
+            "asset": asset,
+            "end_time": end_iso,
+            "price_at_req": price_at_req,
+            "pred_end": pred_end,
+            "actual_end": actual_end,
+            "mae_pct": mae_pct,
+        })
+
+    scored = [r for r in results if r["mae_pct"] is not None]
+    avg = round(sum(r["mae_pct"] for r in scored) / len(scored), 3) if scored else None
+    return jsonify({"avg_mae": avg, "scored_count": len(scored), "records": results})
+
+
 @app.route("/api/chain")
 def api_chain():
     """
