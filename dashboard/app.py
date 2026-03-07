@@ -19,7 +19,8 @@ from flask import Flask, jsonify, render_template
 app = Flask(__name__)
 
 PREDICTION_LOG = os.environ.get("PREDICTION_LOG_PATH", "/root/prediction_log.jsonl")
-MAX_RECORDS = 200  # keep the last N log records in memory
+MAX_RECORDS = 200        # records shown in the Recent Predictions table
+MAX_RECORDS_STATS = 2000 # records scanned when computing accuracy stats
 
 # Simple in-memory cache for /api/charts (yfinance is slow — refresh every 5 min)
 _chart_cache: dict = {}
@@ -51,15 +52,15 @@ ASSET_TICKERS = {
 # Data loading helpers
 # ---------------------------------------------------------------------------
 
-def load_prediction_log():
-    """Read the last MAX_RECORDS entries from prediction_log.jsonl."""
+def load_prediction_log(limit: int = MAX_RECORDS):
+    """Read the last *limit* entries from prediction_log.jsonl."""
     path = Path(PREDICTION_LOG)
     if not path.exists():
         return []
     try:
         lines = path.read_text().strip().splitlines()
         records = []
-        for line in lines[-MAX_RECORDS:]:
+        for line in lines[-limit:]:
             try:
                 records.append(json.loads(line))
             except json.JSONDecodeError:
@@ -262,24 +263,43 @@ def api_status():
 @app.route("/api/predictions")
 def api_predictions():
     """Return recent prediction records, enriched with actual prices where available."""
-    records = load_prediction_log()
-    # Most recent first
-    records = list(reversed(records))[:50]
-    enriched = enrich_records(records)
+    # Load a large window to find completed records for accuracy stats
+    all_records = load_prediction_log(MAX_RECORDS_STATS)
+    total_logged = len(load_prediction_log(limit=99999))  # cheap count
 
-    # Rolling MAE stats
-    scored = [r for r in enriched if r["scored"] and r["mae_pct"] is not None]
+    # Table: 50 most-recent records (reversed so newest first)
+    table_records = list(reversed(all_records))[:50]
+    enriched_table = enrich_records(table_records)
+
+    # Stats: scan all loaded records for completed windows
+    now = datetime.now(timezone.utc)
+    completed_records = []
+    for rec in all_records:
+        end_iso = rec.get("end_time", "")
+        try:
+            end_dt = datetime.fromisoformat(end_iso.replace("Z", "+00:00"))
+            if end_dt.tzinfo is None:
+                end_dt = end_dt.replace(tzinfo=timezone.utc)
+            if end_dt < now - timedelta(minutes=10):
+                completed_records.append(rec)
+        except Exception:
+            pass
+
+    # Enrich a sample of completed records for stats (cap at 200 to stay fast)
+    stats_sample = completed_records[-200:]
+    enriched_stats = enrich_records(stats_sample)
+
+    scored = [r for r in enriched_stats if r["scored"] and r["mae_pct"] is not None]
     avg_mae_pct = round(sum(r["mae_pct"] for r in scored) / len(scored), 3) if scored else None
     dir_correct = [r for r in scored if r.get("direction_correct") is True]
     dir_accuracy = round(len(dir_correct) / len(scored) * 100, 1) if scored else None
 
-    # Asset breakdown
-    assets_seen = list({r["asset"] for r in enriched})
+    assets_seen = list({r["asset"] for r in enriched_table})
 
     return jsonify({
-        "records": enriched,
+        "records": enriched_table,
         "stats": {
-            "total_logged": len(load_prediction_log()),
+            "total_logged": total_logged,
             "avg_mae_pct": avg_mae_pct,
             "direction_accuracy_pct": dir_accuracy,
             "scored_count": len(scored),
