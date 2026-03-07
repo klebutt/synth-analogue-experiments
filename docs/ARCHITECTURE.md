@@ -4,7 +4,7 @@ This document explains how the Synth subnet miner works — where the models liv
 
 ## Overview
 
-The miner is a node on the [Bittensor](https://bittensor.com/) network, specifically on **Subnet 50 (Synth)**. It earns TAO rewards by submitting accurate price forecast distributions for crypto assets (BTC, ETH, SOL, XAU) to validators. Validators score predictions using [CRPS](https://en.wikipedia.org/wiki/Continuous_ranked_probability_score) — the closer your distribution is to the actual price, the higher your score and reward.
+The miner is a node on the [Bittensor](https://bittensor.com/) network, specifically on **Subnet 50 (Synth)**. It earns TAO rewards by submitting accurate price forecast distributions for crypto and tokenised equity assets to validators. Validators score predictions using [CRPS](https://en.wikipedia.org/wiki/Continuous_ranked_probability_score) — the closer your distribution is to the actual price, the higher your score and reward.
 
 ---
 
@@ -26,14 +26,14 @@ flowchart TB
     end
 
     subgraph server ["🖥️ Remote Server — DigitalOcean (167.71.143.194)"]
-        subgraph pm2block ["PM2 (process manager — keeps miner alive + restarts on crash)"]
-            minerpy["synth-subnet/neurons/miner.py
-            (official Bittensor entry point)"]
+        subgraph pm2block ["PM2 — two processes"]
+            minerpy["synth-miner → synth-subnet/neurons/miner.py"]
+            dashpy["synth-dashboard → dashboard/app.py  (port 9090)"]
         end
         bridge["synth-subnet/synth/miner/simulations.py
         (bridge — connects official code to your models)"]
         integration["synth-analogue-experiments/synth_integration.py
-        (your custom ensemble model — copy of local file)"]
+        (your custom ensemble model)"]
         subgraph models ["Your Models (on server)"]
             gbm["GeometricBrownianModel · 50% weight"]
             rw["RandomWalkModel · 20% weight"]
@@ -48,7 +48,9 @@ flowchart TB
         pyth["Pyth / Hermes API
         (live asset price at request time)"]
         yfinance["yfinance
-        (historical price data for volatility calc)"]
+        (historical price data for volatility calc + dashboard)"]
+        bittensor["Bittensor chain (finney)
+        (metagraph — incentive, emission, stake)"]
     end
 
     local -->|"git push"| github
@@ -71,18 +73,18 @@ sequenceDiagram
     participant P as Pyth/Hermes API
     participant Y as yfinance
 
-    V->>A: "Give me 1000 price paths for BTC over 24h, starting now"
+    V->>A: "Give me 1000 price paths for BTC over 1h, starting now"
     A->>B: forward_miner() calls generate_simulations(asset, start_time, num_simulations=1000)
     B->>E: generate_synth_simulations(...)
     E->>P: What is BTC price right now?
-    P-->>E: $85,000
-    E->>Y: Get 2 days of 5-min BTC data
+    P-->>E: $68,000
+    E->>Y: Get 2 days of 5-min BTC data (cached 6h)
     Y-->>E: Historical OHLCV data
-    Note over E: Calculate volatility and drift from historical data (cached 6h)
+    Note over E: Calculate volatility and drift (cached per-asset 6h)
     E->>E: Run 1000 simulations via GBM + RandomWalk + MeanReversion ensemble
-    E-->>B: 1000 price path arrays
+    E-->>B: 1000 price path arrays + log to /root/prediction_log.jsonl
     B-->>A: Return formatted predictions
-    A-->>V: 1000 x 289 price points (one per 5 min over 24h)
+    A-->>V: 1000 paths (61 points each at 1-min intervals over 1h)
     Note over V: Scores predictions against actual price using CRPS
 ```
 
@@ -96,11 +98,12 @@ Think of the miner as two separate layers working together:
 - Handles network registration, wallet auth, axon serving, and validator communication
 - Entry point: `synth-subnet/neurons/miner.py`
 - You do not modify this — keep it up to date via `git pull` inside `synth-subnet/`
+- **Exception**: `synth-subnet/synth/miner/simulations.py` was modified once to delegate to your model
 
 **Layer 2 — Your custom prediction engine** (`synth-analogue-experiments/`, managed by you)
 - `synth_integration.py` — the ensemble model that generates the actual price forecasts
 - `models/baseline/` — the three individual models it combines
-- The bridge (`synth-subnet/synth/miner/simulations.py`) was modified once to import and call your code instead of the default model
+- `dashboard/app.py` — monitoring dashboard served on port 9090
 
 ---
 
@@ -122,14 +125,15 @@ Each model is calibrated every 6 hours using live volatility data from `yfinance
 
 | File | Location | Purpose |
 |---|---|---|
-| `miner.official.config.js` | repo root | PM2 config — defines how to start the miner (interpreter, wallet, port) |
-| `synth_integration.py` | repo root | Your custom ensemble model + `generate_synth_simulations()` entry point |
+| `miner.official.config.js` | repo root | PM2 config — defines `synth-miner` and `synth-dashboard` processes |
+| `synth_integration.py` | repo root | Custom ensemble model + `generate_synth_simulations()` entry point |
 | `models/baseline/geometric_brownian.py` | `models/baseline/` | GBM price simulation model |
 | `models/baseline/mean_reversion.py` | `models/baseline/` | Mean reversion price simulation model |
 | `models/baseline/random_walk.py` | `models/baseline/` | Random walk price simulation model |
 | `models/baseline/volatility_calculator.py` | `models/baseline/` | Fetches volatility + drift from yfinance |
 | `neurons/miner.py` | `synth-subnet/` | Official miner entry point — do not modify |
 | `synth/miner/simulations.py` | `synth-subnet/` | **Bridge file** — modified once to import your model |
+| `dashboard/app.py` | `dashboard/` | Flask dashboard server (port 9090, runs on the miner server) |
 
 ---
 
@@ -157,9 +161,10 @@ See [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) for the full safe-update procedur
 | Hostname | synth-miner-robust |
 | OS | Ubuntu 22.04 LTS |
 | Python | 3.11 (`/usr/bin/python3.11`) |
-| PM2 version | 6.0.13 |
+| Bittensor | 10.0.1 (use `bt.Subtensor`, not `bt.subtensor`) |
 | Wallet name | wallet1 |
 | Hotkey | default |
 | Subnet | 50 (Synth) |
-| UID | 233 |
+| UID | **255** |
 | Axon port | 8091 |
+| Dashboard | http://167.71.143.194:9090 |

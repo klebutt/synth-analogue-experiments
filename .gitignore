@@ -18,4 +18,15 @@ env/
 # PM2 logs/state (if ever committed locally)
 .pm2/
 
+# Jupyter checkpoints
+notebooks/.ipynb_checkpoints/
+.ipynb_checkpoints/
 
+# Python egg / build artifacts
+*.egg-info/
+dist/
+build/
+
+# Environment files (never commit secrets)
+.env
+*.env

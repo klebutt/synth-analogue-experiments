@@ -1,176 +1,134 @@
 # Miner Monitoring Commands
 
-Essential terminal commands for checking on your Synth subnet miner.
+Essential SSH commands for checking your Synth subnet miner (UID 255, Subnet 50).
 
-## 🔍 Essential Miner Monitoring Commands
+> **Tip**: The dashboard at http://167.71.143.194:9090 shows most of this in a UI. Use these commands when you need raw access or the dashboard is unavailable.
 
-### 1. Check Miner Status
+---
+
+## Process Status
+
 ```bash
-ssh root@167.71.143.194 "pm2 status"
-```
-- Shows if your miner is running, stopped, or errored
-- Displays uptime, memory usage, and restart count
-
-### 2. View Miner Logs
-```bash
-ssh root@167.71.143.194 "pm2 logs miner --lines 50"
-```
-- Shows recent miner activity
-- Look for "Received prediction request" to see validator requests
-- Check for errors or warnings
-
-### 3. Check Stake & Balance
-```bash
-ssh root@167.71.143.194 "btcli stake list --wallet.name wallet1 --wallet.hotkey default"
-```
-- Shows your current stake amount
-- Displays stake across different subnets
-
-### 4. Check Wallet Balance
-```bash
-ssh root@167.71.143.194 "btcli wallet overview --wallet.name wallet1 --wallet.hotkey default"
-```
-- Shows available TAO balance
-- Displays staked vs free balance
-
-### 5. Check Network Status
-```bash
-ssh root@167.71.143.194 "btcli subnet metagraph --netuid 50 --no_prompt"
-```
-- Shows all miners in the subnet
-- Displays your UID (233) and position
-- Shows trust scores and emissions
-
-### 5.1. Check Active Status (Quick)
-```bash
-ssh root@167.71.143.194 "python3 -c \"
-import bittensor as bt
-sub = bt.subtensor(network='finney')
-mg = sub.metagraph(netuid=50)
-uid = 233
-print(f'UID {uid}: Active={mg.active[uid]}, Stake={mg.S[uid]:.2f}, Trust={mg.trust[uid]:.4f}')
-print(f'Axon serving: {mg.axons[uid].is_serving}')
-if mg.active[uid] == 0:
-    print('❌ MINER IS INACTIVE')
-else:
-    print('✅ MINER IS ACTIVE')
-\""
-```
-- Quick check of active status, stake, trust, and axon serving
-- Shows if miner is active or inactive
-
-### 6. Check Validator Requests
-```bash
-ssh root@167.71.143.194 "pm2 logs miner --lines 100 | grep -c 'Received prediction'"
-```
-- Counts total validator requests received
-- Shows if you're getting work from validators
-
-### 7. Check System Resources
-```bash
-ssh root@167.71.143.194 "pm2 show miner"
-```
-- Shows detailed process information
-- Displays CPU and memory usage
-- Shows restart count and uptime
-
-### 8. Restart Miner (if needed)
-```bash
-ssh root@167.71.143.194 "pm2 restart miner"
-```
-- Restarts the miner if it's stuck or errored
-- Use if you see issues in the logs
-
-### 9. Check Recent Activity
-```bash
-ssh root@167.71.143.194 "pm2 logs miner --lines 20 | tail -20"
-```
-- Shows the last 20 log entries
-- Quick check for recent activity
-
-### 10. Monitor Live Logs
-```bash
-ssh root@167.71.143.194 "pm2 logs miner --follow"
-```
-- Shows live, real-time logs
-- Press Ctrl+C to stop monitoring
-
-## 🚀 Quick Health Check
-
-Run these 4 commands for a quick status check:
-```bash
-ssh root@167.71.143.194 "pm2 status | grep miner"
-ssh root@167.71.143.194 "btcli stake list --wallet.name wallet1 --wallet.hotkey default | grep 50"
-ssh root@167.71.143.194 "pm2 logs miner --lines 10 | grep -E 'Received prediction|Error|Warning'"
-ssh root@167.71.143.194 "python3 -c \"import bittensor as bt; sub=bt.subtensor('finney'); mg=sub.metagraph(50); print(f'Active: {mg.active[233]}, Trust: {mg.trust[233]:.4f}, Axon: {mg.axons[233].is_serving}')\""
-```
-
-These commands will tell you if your miner is running, how much stake you have, if you're receiving validator requests, and your active status!
-
-## 🎯 Check Active Status
-
-### Simple Active Check
-```bash
-ssh root@167.71.143.194 "python3 -c \"import bittensor as bt; sub=bt.subtensor('finney'); mg=sub.metagraph(50); print(f'Active: {mg.active[233]}, Trust: {mg.trust[233]:.4f}, Axon: {mg.axons[233].is_serving}')\""
-```
-
-### Detailed Status Check
-```bash
-ssh root@167.71.143.194 "python3 -c \"
-import bittensor as bt
-sub = bt.subtensor(network='finney')
-mg = sub.metagraph(netuid=50)
-uid = 233
-print(f'=== MINER STATUS ===')
-print(f'UID: {uid}')
-print(f'Active: {mg.active[uid]}')
-print(f'Stake: {mg.S[uid]:.2f} τ')
-print(f'Trust: {mg.trust[uid]:.4f}')
-print(f'Incentive: {mg.incentive[uid]:.4f}')
-print(f'Emission: {mg.emission[uid]}')
-print(f'Axon serving: {mg.axons[uid].is_serving}')
-print(f'Total active miners: {mg.active.sum()}')
-print(f'Active validators: {sum(mg.validator_permit)}')
-if mg.active[uid] == 0:
-    print('❌ MINER IS INACTIVE')
-else:
-    print('✅ MINER IS ACTIVE')
-\""
-```
-
-### Check if Miner is Receiving Requests
-```bash
-ssh root@167.71.143.194 "pm2 logs miner --lines 50 | grep -E 'Received prediction|request|validator' | tail -10"
-```
-
-## 📊 Dashboard Alternative
-
-For a visual interface, use the web dashboard:
-- **URL**: http://localhost:5000
-- **Features**: Real-time monitoring, stake tracking, validator requests
-- **Auto-refresh**: Every 30 seconds
-
-## 🔧 Troubleshooting
-
-### Miner Not Running
-```bash
-ssh root@167.71.143.194 "pm2 start miner"
-```
-
-### Check for Errors
-```bash
-ssh root@167.71.143.194 "pm2 logs miner --err"
-```
-
-### View All PM2 Processes
-```bash
+# See all PM2 processes (should show synth-miner and synth-dashboard both online)
 ssh root@167.71.143.194 "pm2 list"
+
+# Detailed info for the miner
+ssh root@167.71.143.194 "pm2 show synth-miner"
+
+# Restart the miner
+ssh root@167.71.143.194 "pm2 restart synth-miner"
+
+# Restart the dashboard
+ssh root@167.71.143.194 "pm2 restart synth-dashboard"
 ```
 
 ---
 
-**Server**: 167.71.143.194  
-**Wallet**: wallet1  
-**Hotkey**: default  
-**UID**: 233  
-**Subnet**: 50 (Synth)
+## Logs
+
+```bash
+# Last 50 lines of miner output
+ssh root@167.71.143.194 "pm2 logs synth-miner --lines 50 --nostream"
+
+# Last 50 lines of miner errors
+ssh root@167.71.143.194 "pm2 logs synth-miner --err --lines 50 --nostream"
+
+# Follow live logs (Ctrl+C to stop)
+ssh root@167.71.143.194 "pm2 logs synth-miner --follow"
+
+# Count prediction requests in the last hour
+ssh root@167.71.143.194 "grep 'Received prediction request' ~/.pm2/logs/synth-miner-out.log | tail -200 | wc -l"
+```
+
+---
+
+## On-Chain Status
+
+```bash
+# Quick metagraph check for UID 255
+ssh root@167.71.143.194 "python3.11 -c \"
+import bittensor as bt
+sub = bt.Subtensor('finney')
+mg = sub.metagraph(50)
+uid = 255
+print(f'Active:    {bool(mg.active[uid])}')
+print(f'Incentive: {float(mg.I[uid]):.6f}')
+print(f'Emission:  {float(mg.E[uid]):.6f}')
+print(f'Stake:     {float(mg.S[uid]):.2f} alpha')
+print(f'Axon:      {mg.axons[uid].is_serving}')
+\""
+
+# Check coldkey TAO balance
+ssh root@167.71.143.194 "python3.11 -c \"
+import bittensor as bt
+w = bt.wallet(name='wallet1', hotkey='default')
+sub = bt.Subtensor('finney')
+print('TAO balance:', sub.get_balance(w.coldkeypub.ss58_address))
+\""
+```
+
+> **API note**: bittensor 10.x uses `bt.Subtensor` (capital S). `mg.trust` and `mg.R` do not exist in 10.x — use `mg.Tv` (validator trust) and `mg.I`, `mg.E`, `mg.C`, `mg.D`, `mg.S` instead.
+
+---
+
+## Integration Verification
+
+```bash
+# Confirm the bridge delegates to your model
+ssh root@167.71.143.194 "grep -n 'synth_integration' /root/synth-subnet/synth/miner/simulations.py"
+
+# Confirm synth_integration loads
+ssh root@167.71.143.194 "python3.11 -c \"
+import sys; sys.path.insert(0, '/root/synth-analogue-experiments')
+import synth_integration
+print('OK — generate_synth_simulations:', hasattr(synth_integration, 'generate_synth_simulations'))
+\""
+
+# Run the full diagnostic script
+ssh root@167.71.143.194 "python3.11 /root/synth-analogue-experiments/scripts/diagnose_miner_issue.py"
+```
+
+---
+
+## Re-registration (if active = False)
+
+```bash
+# On the server — run from synth-subnet directory
+ssh root@167.71.143.194
+cd /root/synth-subnet
+btcli subnet register --netuid 50 --wallet.name wallet1 --wallet.hotkey default --subtensor.network finney
+```
+
+> Note: Registration costs ~0.8–1.5 TAO depending on subnet demand. The cost fluctuates by interval — if it says "subnet full for this interval, try again in N blocks", wait ~30 minutes (each block ~12s).
+
+---
+
+## Deploy a Code Update
+
+```bash
+# 1. On local machine — push changes
+git push origin clean
+
+# 2. On server — pull and restart
+ssh root@167.71.143.194
+cd /root/synth-analogue-experiments
+git pull origin clean
+pm2 restart synth-miner
+pm2 logs synth-miner   # verify clean startup
+```
+
+---
+
+## Quick Reference
+
+| Property | Value |
+|----------|-------|
+| Server | 167.71.143.194 |
+| Wallet | wallet1 / default |
+| UID | **255** |
+| Subnet | 50 (finney mainnet) |
+| PM2 miner | `synth-miner` |
+| PM2 dashboard | `synth-dashboard` |
+| Dashboard URL | http://167.71.143.194:9090 |
+| Prediction log | `/root/prediction_log.jsonl` |
+| Miner log | `~/.pm2/logs/synth-miner-out.log` |

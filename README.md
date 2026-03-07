@@ -1,109 +1,109 @@
-# Synth Analog Experiments
+# synth-analogue-experiments
 
-## Project Overview
-This repo is a workspace for developing and testing **analog-inspired AI modules** for [Bittensor’s Synth subnet](https://github.com/opentensor/synth).  
-The goal is to ground early technical progress in our long-term vision of **Analog-Inspired AGI**, while also generating income and traction by contributing useful forecasting modules to Synth.
-
-## Why This Project?
-- **Long-term vision**: We believe AGI requires more than current machine learning and LLM approaches. Specifically, it needs:
-  - Abductive reasoning (Peirce’s logic of discovery).  
-  - Handling continuous, time-based data streams.  
-  - Parallelism and efficiency (analog-like computation).  
-  - Continuous learning and self-organization.  
-  - The ability to integrate values and meaning.  
-- **Practical short-term**: Synth provides a feasible first testbed. Contributing forecasting models can both:
-  - Demonstrate analog-inspired techniques in a live environment.  
-  - Generate TAO (Bittensor’s token), funding ongoing development.  
-
-This repo bridges vision and practice.
+A custom miner for [Bittensor Subnet 50 (Synth)](https://github.com/synth-subnet), deployed on DigitalOcean and earning TAO rewards by generating probabilistic price forecasts for crypto and tokenised equity assets.
 
 ---
 
-## Stage 2a: First Subnet Engagement (Synth)
+## What This Is
 
-### Overarching Objectives
-1. **Develop analog-inspired forecasting modules** that can outperform baselines on Synth.  
-2. **Validate these methods** in a real subnet environment.  
-3. **Earn TAO rewards** to sustain and scale the project.  
+The Synth subnet asks miners to predict price distributions (1000 simulated paths) for assets including BTC, ETH, SOL, XAU, and five tokenised equities (SPYX, NVDAX, TSLAX, AAPLX, GOOGLX). Validators score submissions using CRPS — the closer your distribution is to the actual price, the higher your reward.
 
-### Technical Roadmap (Steps 1–3)
-
-**Step 1: Environment Setup**
-- Clone the Synth repo and get a test miner running locally.  
-- Ensure local environment can ingest time-series data and submit forecasts.  
-
-**Output:** Working local miner connected to Synth test network.  
+This repo contains:
+- A custom **Ensemble GBM-Weighted** prediction model
+- A **monitoring dashboard** served directly from the miner server
+- All supporting infrastructure (PM2 config, volatility calibration, etc.)
 
 ---
 
-**Step 2: Baseline Forecasting**
-- Implement simple models (e.g., moving average, ARIMA, basic MLP) to establish benchmarks.  
-- Document performance and limitations.  
+## Current Status
 
-**Output:** Baseline forecast results + comparison notebook.  
-
----
-
-**Step 3: Analog-Inspired Forecasting Module**
-- Prototype analog-inspired approaches:  
-  - Continuous-time dynamics (ODE-based models).  
-  - Reservoir computing / echo state networks.  
-  - Abductive signal interpretation (simple rule-driven anomaly detection + hypothesis generation).  
-- Integrate module into Synth miner interface.  
-- Compare with baselines.  
-
-**Output:**  
-- Analog-inspired model integrated with Synth miner.  
-- Experiment results (performance + reward data).  
+| Property | Value |
+|----------|-------|
+| Server | DigitalOcean — `167.71.143.194` |
+| UID | **255** on Subnet 50 |
+| Wallet | `wallet1 / default` |
+| Dashboard | http://167.71.143.194:9090 |
+| Git branch | `clean` |
+| Bittensor version | 10.0.1 |
 
 ---
 
-## 🚀 Current Status
+## Repo Structure
 
-### ✅ **Deployed & Running**
-- **Miner**: Running on DigitalOcean server (167.71.143.194)
-- **UID**: 233 on Synth subnet 50
-- **Stake**: 94.64 τ (recently staked +1 TAO)
-- **Model**: Ensemble (GBM-weighted) with CRPS ~547.30
-
-### 🚧 **In Progress**
-- **Dashboard**: Web interface for monitoring (needs fixing)
-- **Data Fetching**: Sequential SSH commands for reliability
-
-### 📊 **Key Metrics**
-- **Validator Requests**: 0 (waiting for requests)
-- **Wallet Balance**: ~1.1976 τ
-- **Miner Status**: Online and running
-
-## 📁 Repo Structure
 ```
 synth-analogue-experiments/
-├── custom_synth_miner.py      # Main miner implementation
-├── synth_integration.py       # Ensemble model integration
-├── miner_api.py              # Dashboard API (needs fixing)
-├── miner_dashboard.html      # Web dashboard
-├── models/                   # Prediction models
-│   ├── baseline/            # Random walk, GBM, mean reversion
-│   └── analog/              # Fluid dynamics models
-├── miner_monitoring_commands.md  # SSH command reference
-├── worklog_2025-10-11_final.md   # Development log
-└── synth-subnet/            # Official subnet code
+│
+├── AGENTS.md                     ← START HERE if you are an AI agent
+├── synth_integration.py          ← Custom ensemble model (core prediction logic)
+├── miner.official.config.js      ← PM2 process manifest (miner + dashboard)
+├── requirements.txt              ← Runtime dependencies
+│
+├── models/
+│   └── baseline/
+│       ├── geometric_brownian.py ← GBM model (50% weight)
+│       ├── mean_reversion.py     ← Mean reversion model (30% weight)
+│       ├── random_walk.py        ← Random walk model (20% weight)
+│       └── volatility_calculator.py ← Fetches σ and drift from yfinance
+│
+├── dashboard/
+│   ├── app.py                    ← Flask server (runs ON the miner server, port 9090)
+│   └── templates/index.html     ← Dashboard UI
+│
+├── scripts/
+│   └── diagnose_miner_issue.py  ← Diagnostic script for debugging prediction issues
+│
+├── tests/
+│   ├── test_baseline_models.py  ← Tests for custom models
+│   ├── test_crps.py             ← Tests for CRPS scoring util
+│   └── test_simulations.py     ← Integration test for the bridge
+│
+├── docs/
+│   ├── ARCHITECTURE.md          ← System diagrams + request flow
+│   ├── DEPLOYMENT_GUIDE.md      ← Safe update workflow
+│   ├── MINER_HEALTH_CHECK.md    ← Step-by-step health verification
+│   ├── MODEL.md                 ← How the prediction model works
+│   ├── DASHBOARD.md             ← Dashboard architecture and API reference
+│   └── SCORING_AND_METRICS.md  ← How scoring works, known oracle issues
+│
+└── synth-subnet/                ← Git submodule — official subnet code (do not modify
+                                    except synth/miner/simulations.py)
 ```
 
-## 🔧 Quick Start
+---
 
-### **Check Miner Status**
+## Quick Start
+
+### View the Dashboard
+```
+http://167.71.143.194:9090
+```
+Auto-refreshes every 60 seconds. Shows PM2 status, on-chain metrics, predictions, and per-asset price charts.
+
+### Check Miner Health (SSH)
 ```bash
-ssh root@167.71.143.194 "pm2 status | grep custom-miner"
+ssh root@167.71.143.194 "pm2 list"
 ```
 
-### **View Dashboard**
+### Deploy a Code Change
 ```bash
-python miner_api.py  # Start API
-# Open http://localhost:5000
+# 1. Edit files locally, then:
+git add . && git commit -m "your message"
+git push origin clean
+
+# 2. On the server:
+ssh root@167.71.143.194
+cd /root/synth-analogue-experiments && git pull origin clean
+pm2 restart synth-miner
+pm2 logs synth-miner   # verify clean startup
 ```
 
-### **Monitor Logs**
-```bash
-ssh root@167.71.143.194 "pm2 logs custom-miner --follow"
-```
+---
+
+## Key Docs
+
+- **[AGENTS.md](AGENTS.md)** — Full context for AI agents working in this repo
+- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — How the two-layer system works
+- **[docs/MODEL.md](docs/MODEL.md)** — The prediction model in detail
+- **[docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)** — Safe update procedure
+- **[docs/DASHBOARD.md](docs/DASHBOARD.md)** — Dashboard API and scoring
+- **[docs/SCORING_AND_METRICS.md](docs/SCORING_AND_METRICS.md)** — Scoring mechanics and known issues
