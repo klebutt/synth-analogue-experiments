@@ -27,6 +27,11 @@ _chart_cache: dict = {}
 _chart_cache_ts: datetime | None = None
 CHART_CACHE_TTL = 300  # seconds
 
+# Cache for the predictions stats (accuracy computation is slow — refresh every 5 min)
+_stats_cache: dict = {}
+_stats_cache_ts: datetime | None = None
+STATS_CACHE_TTL = 300  # seconds
+
 # Cache for /api/chain (metagraph query is slow — refresh every 10 min)
 _chain_cache: dict = {}
 _chain_cache_ts: datetime | None = None
@@ -268,46 +273,66 @@ def api_status():
 @app.route("/api/predictions")
 def api_predictions():
     """Return recent prediction records, enriched with actual prices where available."""
-    # Load a large window to find completed records for accuracy stats
+    global _stats_cache, _stats_cache_ts
+
+    now = datetime.now(timezone.utc)
+
+    # Load all records we need
     all_records = load_prediction_log(MAX_RECORDS_STATS)
-    total_logged = len(load_prediction_log(limit=99999))  # cheap count
+    total_logged = len(load_prediction_log(limit=99999))
 
     # Table: 50 most-recent records (reversed so newest first)
     table_records = list(reversed(all_records))[:50]
     enriched_table = enrich_records(table_records)
-
-    # Stats: scan all loaded records for completed windows
-    now = datetime.now(timezone.utc)
-    completed_records = []
-    for rec in all_records:
-        end_iso = rec.get("end_time", "")
-        try:
-            end_dt = datetime.fromisoformat(end_iso.replace("Z", "+00:00"))
-            if end_dt.tzinfo is None:
-                end_dt = end_dt.replace(tzinfo=timezone.utc)
-            if end_dt < now - timedelta(minutes=10):
-                completed_records.append(rec)
-        except Exception:
-            pass
-
-    # Enrich a sample of completed records for stats (cap at 200 to stay fast)
-    stats_sample = completed_records[-200:]
-    enriched_stats = enrich_records(stats_sample)
-
-    scored = [r for r in enriched_stats if r["scored"] and r["mae_pct"] is not None]
-    avg_mae_pct = round(sum(r["mae_pct"] for r in scored) / len(scored), 3) if scored else None
-    dir_correct = [r for r in scored if r.get("direction_correct") is True]
-    dir_accuracy = round(len(dir_correct) / len(scored) * 100, 1) if scored else None
-
     assets_seen = list({r["asset"] for r in enriched_table})
+
+    # Stats: use cache if fresh enough (yfinance calls are slow and rate-limited)
+    if (
+        _stats_cache
+        and _stats_cache_ts is not None
+        and (now - _stats_cache_ts).total_seconds() < STATS_CACHE_TTL
+    ):
+        cached_stats = _stats_cache
+    else:
+        # Only score assets where yfinance prices match the subnet oracle
+        completed_scoring = []
+        for rec in all_records:
+            if rec.get("asset") not in SCORING_ASSETS:
+                continue
+            end_iso = rec.get("end_time", "")
+            try:
+                end_dt = datetime.fromisoformat(end_iso.replace("Z", "+00:00"))
+                if end_dt.tzinfo is None:
+                    end_dt = end_dt.replace(tzinfo=timezone.utc)
+                if end_dt < now - timedelta(minutes=10):
+                    completed_scoring.append(rec)
+            except Exception:
+                pass
+
+        # Cap at 200 to keep response time reasonable
+        stats_sample = completed_scoring[-200:]
+        enriched_stats = enrich_records(stats_sample)
+
+        scored = [r for r in enriched_stats if r["scored"] and r["mae_pct"] is not None]
+        avg_mae_pct = round(sum(r["mae_pct"] for r in scored) / len(scored), 3) if scored else None
+        dir_correct = [r for r in scored if r.get("direction_correct") is True]
+        dir_accuracy = round(len(dir_correct) / len(scored) * 100, 1) if scored else None
+
+        cached_stats = {
+            "avg_mae_pct": avg_mae_pct,
+            "direction_accuracy_pct": dir_accuracy,
+            "scored_count": len(scored),
+        }
+        _stats_cache = cached_stats
+        _stats_cache_ts = now
 
     return jsonify({
         "records": enriched_table,
         "stats": {
             "total_logged": total_logged,
-            "avg_mae_pct": avg_mae_pct,
-            "direction_accuracy_pct": dir_accuracy,
-            "scored_count": len(scored),
+            "avg_mae_pct": cached_stats["avg_mae_pct"],
+            "direction_accuracy_pct": cached_stats["direction_accuracy_pct"],
+            "scored_count": cached_stats["scored_count"],
             "assets": assets_seen,
         },
     })
