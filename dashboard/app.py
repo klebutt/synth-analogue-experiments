@@ -48,6 +48,11 @@ ASSET_TICKERS = {
     "GOOGLX": "GOOGL",
 }
 
+# Only these assets have yfinance prices that reliably match the subnet oracle.
+# XAU (GC=F) and tokenised equities use different oracles — exclude from MAE stats
+# to avoid misleading numbers.
+SCORING_ASSETS = {"BTC", "ETH", "SOL"}
+
 # ---------------------------------------------------------------------------
 # Data loading helpers
 # ---------------------------------------------------------------------------
@@ -216,23 +221,23 @@ def enrich_records(records):
         except Exception:
             window_complete = False
 
-        if window_complete and rec.get("mean_path"):
-            actual = fetch_actual_price(rec["asset"], start_iso)
-            if actual is not None:
-                rec["actual_start_price"] = round(actual, 2)
-                pred_price = rec["mean_path"][0]  # prediction at t=0 (start price)
-                rec["mae_dollar"] = round(abs(pred_price - actual), 2)
-                if actual > 0:
-                    rec["mae_pct"] = round(abs(pred_price - actual) / actual * 100, 3)
+        if window_complete and rec.get("mean_path") and rec.get("asset") in SCORING_ASSETS:
+            # Compare predicted end price vs actual end price (measures forecast quality,
+            # not just price calibration at t=0 which is trivially near-zero).
+            actual_end = fetch_actual_price(rec["asset"], end_iso)
+            if actual_end is not None:
+                pred_end = rec["mean_path"][-1]
+                rec["actual_start_price"] = round(actual_end, 2)  # reuse field for display
+                rec["mae_dollar"] = round(abs(pred_end - actual_end), 2)
+                if actual_end > 0:
+                    rec["mae_pct"] = round(abs(pred_end - actual_end) / actual_end * 100, 3)
 
-                # Directional accuracy: did we predict the price would go up/down correctly?
+                # Directional accuracy: did we predict up/down from start price correctly?
                 price_at_request = rec.get("price_at_request")
                 if price_at_request and len(rec["mean_path"]) > 1:
                     pred_direction = rec["mean_path"][-1] > price_at_request
-                    actual_end = fetch_actual_price(rec["asset"], end_iso)
-                    if actual_end is not None:
-                        actual_direction = actual_end > price_at_request
-                        rec["direction_correct"] = pred_direction == actual_direction
+                    actual_direction = actual_end > price_at_request
+                    rec["direction_correct"] = pred_direction == actual_direction
 
                 rec["scored"] = True
 
