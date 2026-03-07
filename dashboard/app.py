@@ -251,6 +251,108 @@ def enrich_records(records):
 
 
 # ---------------------------------------------------------------------------
+# Batch scoring helper
+# ---------------------------------------------------------------------------
+
+def _batch_score(records, now):
+    """
+    Score a list of completed prediction records without making one yfinance call
+    per record (which triggers rate limits).  Instead, download a single price
+    history block per asset and look up each end_time in that block.
+
+    Returns a list of dicts: {asset, mae_pct, direction_correct}
+    """
+    from collections import defaultdict
+
+    # Group records by asset
+    by_asset = defaultdict(list)
+    for rec in records:
+        asset = rec.get("asset")
+        if asset in SCORING_ASSETS:
+            by_asset[asset].append(rec)
+
+    results = []
+    for asset, recs in by_asset.items():
+        ticker = ASSET_TICKERS.get(asset)
+        if not ticker:
+            continue
+
+        # Find the time range for this batch
+        end_times = []
+        for rec in recs:
+            try:
+                et = datetime.fromisoformat(rec["end_time"].replace("Z", "+00:00"))
+                if et.tzinfo is None:
+                    et = et.replace(tzinfo=timezone.utc)
+                end_times.append(et)
+            except Exception:
+                pass
+        if not end_times:
+            continue
+
+        window_start = min(end_times) - timedelta(minutes=15)
+        window_end   = max(end_times) + timedelta(minutes=15)
+        # Cap to recent enough — nothing older than 48h
+        window_start = max(window_start, now - timedelta(hours=48))
+
+        try:
+            df = yf.download(
+                ticker,
+                start=window_start,
+                end=window_end,
+                interval="1m",
+                progress=False,
+                auto_adjust=True,
+            )
+            if df.empty:
+                continue
+            close = df["Close"]
+            if hasattr(close, "columns"):
+                close = close.iloc[:, 0]
+        except Exception:
+            continue
+
+        # Score each record by looking up the nearest 1-min bar to end_time
+        for rec in recs:
+            try:
+                et = datetime.fromisoformat(rec["end_time"].replace("Z", "+00:00"))
+                if et.tzinfo is None:
+                    et = et.replace(tzinfo=timezone.utc)
+                if et > now - timedelta(minutes=10):
+                    continue  # too recent
+
+                # Find the closest bar
+                idx = close.index.searchsorted(et)
+                if idx >= len(close):
+                    idx = len(close) - 1
+                actual_end = float(close.iloc[idx])
+
+                mean_path = rec.get("mean_path", [])
+                price_at_req = rec.get("price_at_request")
+                if not mean_path or actual_end <= 0:
+                    continue
+
+                pred_end = float(mean_path[-1])
+                mae_pct = round(abs(pred_end - actual_end) / actual_end * 100, 3)
+
+                direction_correct = None
+                if price_at_req:
+                    pred_dir = pred_end > float(price_at_req)
+                    actual_dir = actual_end > float(price_at_req)
+                    direction_correct = pred_dir == actual_dir
+
+                results.append({
+                    "asset": asset,
+                    "mae_pct": mae_pct,
+                    "direction_correct": direction_correct,
+                })
+            except Exception:
+                pass
+
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Flask routes
 # ---------------------------------------------------------------------------
 
@@ -309,11 +411,9 @@ def api_predictions():
             except Exception:
                 pass
 
-        # Cap at 200 to keep response time reasonable
+        # Cap at 200 records, then batch-fetch prices per asset (avoids yfinance rate limits)
         stats_sample = completed_scoring[-200:]
-        enriched_stats = enrich_records(stats_sample)
-
-        scored = [r for r in enriched_stats if r["scored"] and r["mae_pct"] is not None]
+        scored = _batch_score(stats_sample, now)
         avg_mae_pct = round(sum(r["mae_pct"] for r in scored) / len(scored), 3) if scored else None
         dir_correct = [r for r in scored if r.get("direction_correct") is True]
         dir_accuracy = round(len(dir_correct) / len(scored) * 100, 1) if scored else None
