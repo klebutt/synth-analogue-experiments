@@ -344,7 +344,6 @@ def _batch_score(records, now):
                     direction_correct = pred_dir == actual_dir
 
                 crps_endpoint = None
-                crps_pct = None
                 in_band = None
                 spread_pct = None
                 if (p10_path and p90_path
@@ -357,15 +356,12 @@ def _batch_score(records, now):
                     in_band = p10_end <= actual_end <= p90_end
                     if pred_end > 0:
                         spread_pct = round((p90_end - p10_end) / pred_end * 100, 3)
-                    if price_at_req and float(price_at_req) > 0:
-                        crps_pct = round(crps_endpoint / float(price_at_req) * 100, 4)
 
                 results.append({
                     "asset": asset,
                     "mae_pct": mae_pct,
                     "direction_correct": direction_correct,
                     "crps_endpoint": crps_endpoint,
-                    "crps_pct": crps_pct,
                     "in_band": in_band,
                     "spread_pct": spread_pct,
                 })
@@ -444,9 +440,6 @@ def api_predictions():
         crps_vals = [r["crps_endpoint"] for r in scored if r.get("crps_endpoint") is not None]
         avg_crps = round(sum(crps_vals) / len(crps_vals), 2) if crps_vals else None
 
-        crps_pct_vals = [r["crps_pct"] for r in scored if r.get("crps_pct") is not None]
-        avg_crps_pct = round(sum(crps_pct_vals) / len(crps_pct_vals), 4) if crps_pct_vals else None
-
         in_band_vals = [r["in_band"] for r in scored if r.get("in_band") is not None]
         calibration_pct = round(
             sum(1 for v in in_band_vals if v) / len(in_band_vals) * 100, 1
@@ -475,7 +468,6 @@ def api_predictions():
             "direction_accuracy_pct": dir_accuracy,
             "scored_count": len(scored),
             "estimated_crps": avg_crps,
-            "estimated_crps_pct": avg_crps_pct,
             "calibration_pct": calibration_pct,
             "avg_spread_pct": avg_spread_pct,
             "per_asset": per_asset,
@@ -491,7 +483,6 @@ def api_predictions():
             "direction_accuracy_pct": cached_stats["direction_accuracy_pct"],
             "scored_count": cached_stats["scored_count"],
             "estimated_crps": cached_stats.get("estimated_crps"),
-            "estimated_crps_pct": cached_stats.get("estimated_crps_pct"),
             "calibration_pct": cached_stats.get("calibration_pct"),
             "avg_spread_pct": cached_stats.get("avg_spread_pct"),
             "per_asset": cached_stats.get("per_asset", {}),
@@ -659,11 +650,6 @@ def api_charts():
                             spread_count += 1
 
             crps_est = round(crps_sum / crps_count, 4) if crps_count > 0 else None
-            crps_pct = None
-            if crps_est is not None and len(mean_path) > 0:
-                ref = float(mean_path[0])
-                if ref > 0:
-                    crps_pct = round(crps_est / ref * 100, 4)
             cal_pct = round(in_band_hit / in_band_count * 100, 1) if in_band_count > 0 else None
             sprd_pct = round(spread_sum / spread_count, 3) if spread_count > 0 else None
 
@@ -701,7 +687,6 @@ def api_charts():
                 "p10": p10_series,
                 "p90": p90_series,
                 "crps_estimate": crps_est,
-                "crps_pct": crps_pct,
                 "calibration_pct": cal_pct,
                 "spread_pct": sprd_pct,
                 "mae_pct": mae_pct,

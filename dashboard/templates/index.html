@@ -283,11 +283,6 @@
         <div class="desc">Lower is better — validators use CRPS for scoring</div>
       </div>
       <div class="perf-card primary">
-        <div class="label">CRPS %</div>
-        <div class="value" id="a-crps-pct">–</div>
-        <div class="desc">CRPS as % of price — comparable across assets</div>
-      </div>
-      <div class="perf-card primary">
         <div class="label">Calibration</div>
         <div class="value" id="a-calib">–</div>
         <div class="desc">% of actuals in p10–p90 band (target ~80%)</div>
@@ -339,8 +334,7 @@
           <tr>
             <th>Time</th>
             <th>Asset</th>
-            <th>CRPS ($)</th>
-            <th>CRPS %</th>
+            <th>CRPS</th>
             <th>Calibration</th>
             <th>Spread</th>
             <th>MAE</th>
@@ -349,7 +343,7 @@
           </tr>
         </thead>
         <tbody id="diag-tbody">
-          <tr><td colspan="9" class="empty">Loading diagnostics…</td></tr>
+          <tr><td colspan="8" class="empty">Loading diagnostics…</td></tr>
         </tbody>
       </table>
     </div>
@@ -449,17 +443,9 @@
   function renderPerformance(stats) {
     const crpsEl = document.getElementById('a-crps');
     if (stats.estimated_crps != null) {
-      crpsEl.textContent = '$' + stats.estimated_crps.toFixed(2);
+      crpsEl.textContent = stats.estimated_crps.toFixed(2);
     } else {
       crpsEl.textContent = 'Pending';
-    }
-
-    const crpsPctEl = document.getElementById('a-crps-pct');
-    if (stats.estimated_crps_pct != null) {
-      crpsPctEl.textContent = stats.estimated_crps_pct.toFixed(3) + '%';
-      crpsPctEl.className = 'value' + (stats.estimated_crps_pct < 0.1 ? ' up' : stats.estimated_crps_pct < 0.5 ? ' neutral' : ' down');
-    } else {
-      crpsPctEl.textContent = 'Pending';
     }
 
     const calibEl = document.getElementById('a-calib');
@@ -494,7 +480,7 @@
       const color = ASSET_COLORS[asset] || '#8b949e';
       return `<div class="per-asset-card" style="border-left:3px solid ${color}">
         <div class="pa-asset">${asset}</div>
-        <div class="pa-stat">CRPS: <strong>${v.avg_crps != null ? '$' + v.avg_crps.toFixed(2) : '–'}</strong></div>
+        <div class="pa-stat">CRPS: <strong>${v.avg_crps != null ? v.avg_crps.toFixed(2) : '–'}</strong></div>
         <div class="pa-stat">MAE: <strong>${v.avg_mae_pct != null ? v.avg_mae_pct.toFixed(3) + '%' : '–'}</strong></div>
         <div class="pa-stat">Cal: <strong>${v.calibration_pct != null ? v.calibration_pct.toFixed(0) + '%' : '–'}</strong></div>
         <div class="pa-stat">n=${v.count}</div>
@@ -678,9 +664,8 @@
       const p90Pts  = toPoints(pred.p90);
 
       let predColor = '#d29922';
-      if (pred.window_complete && pred.crps_pct != null) {
-        if (pred.crps_pct < 0.1) predColor = '#3fb950';
-        else if (pred.crps_pct > 0.5) predColor = '#f85149';
+      if (pred.window_complete && pred.crps_estimate != null) {
+        predColor = '#3fb950';
       }
 
       if (p10Pts.length > 0 && p90Pts.length > 0) {
@@ -778,7 +763,7 @@
     if (statsEl && predictions.length > 0) {
       const latest = predictions[0];
       const parts = [];
-      if (latest.crps_estimate != null) parts.push(`CRPS: $${latest.crps_estimate.toFixed(1)}`);
+      if (latest.crps_estimate != null) parts.push(`CRPS: ${latest.crps_estimate.toFixed(2)}`);
       if (latest.calibration_pct != null) parts.push(`Cal: ${latest.calibration_pct.toFixed(0)}%`);
       if (latest.spread_pct != null) parts.push(`Spread: ${latest.spread_pct.toFixed(1)}%`);
       statsEl.textContent = parts.join(' \u00B7 ');
@@ -802,8 +787,8 @@
       const color = ASSET_COLORS[asset] || '#8b949e';
       const points = [];
       for (const pred of (data.predictions || [])) {
-        if (pred.crps_pct != null && pred.logged_at) {
-          points.push({ x: new Date(pred.logged_at), y: pred.crps_pct });
+        if (pred.crps_estimate != null && pred.logged_at) {
+          points.push({ x: new Date(pred.logged_at), y: pred.crps_estimate });
         }
       }
       if (points.length > 0) {
@@ -838,7 +823,7 @@
           tooltip: {
             backgroundColor: '#161b22', borderColor: '#30363d', borderWidth: 1,
             titleColor: '#8b949e', bodyColor: '#e6edf3',
-            callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y?.toFixed(4) ?? '\u2013'}%` },
+            callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y?.toFixed(2) ?? '\u2013'}` },
           },
         },
         scales: {
@@ -849,9 +834,9 @@
             ticks: { color: '#8b949e', maxTicksLimit: 8, font: { size: 10 } },
           },
           y: {
-            title: { display: true, text: 'CRPS (% of price)', color: '#8b949e', font: { size: 11 } },
+            title: { display: true, text: 'CRPS (score)', color: '#8b949e', font: { size: 11 } },
             grid: { color: '#30363d' },
-            ticks: { color: '#8b949e', font: { size: 10 }, callback: v => v.toFixed(3) + '%' },
+            ticks: { color: '#8b949e', font: { size: 10 }, callback: v => v.toFixed(2) },
           },
         },
       },
@@ -871,7 +856,6 @@
           logged_at: pred.logged_at,
           asset,
           crps: pred.crps_estimate,
-          crps_pct: pred.crps_pct,
           calibration: pred.calibration_pct,
           spread: pred.spread_pct,
           mae: pred.mae_pct,
@@ -883,7 +867,7 @@
     rows.sort((a, b) => (b.logged_at || '').localeCompare(a.logged_at || ''));
 
     if (rows.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="9" class="empty">No diagnostics available yet</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="empty">No diagnostics available yet</td></tr>';
       return;
     }
 
@@ -902,8 +886,7 @@
       return `<tr>
         <td style="color:var(--muted);font-size:12px">${fmtTime(r.logged_at)}</td>
         <td>${assetTag(r.asset)}</td>
-        <td>${r.crps != null ? '$' + r.crps.toFixed(2) : '<span class="neutral">\u2013</span>'}</td>
-        <td>${cv(r.crps_pct, null, 0.3, '%')}</td>
+        <td>${r.crps != null ? r.crps.toFixed(2) : '<span class="neutral">\u2013</span>'}</td>
         <td>${cv(r.calibration, 65, 95, '%')}</td>
         <td>${cv(r.spread, null, 5, '%')}</td>
         <td>${cv(r.mae, null, 1, '%')}</td>
