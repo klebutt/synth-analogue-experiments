@@ -21,7 +21,6 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 14px; }
 
-    /* ── Header ── */
     header {
       background: var(--surface);
       border-bottom: 1px solid var(--border);
@@ -35,10 +34,8 @@
     #refresh-status { font-size: 12px; color: var(--muted); }
     #refresh-status.loading { color: var(--yellow); }
 
-    /* ── Layout ── */
-    main { max-width: 1280px; margin: 0 auto; padding: 20px 24px; }
+    main { max-width: 1360px; margin: 0 auto; padding: 20px 24px; }
 
-    /* ── Status bar ── */
     .status-bar {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -58,7 +55,6 @@
     .stopped { color: var(--red); }
     .unknown { color: var(--yellow); }
 
-    /* ── Section headers ── */
     .section { margin-bottom: 24px; }
     .section-header {
       font-size: 13px;
@@ -71,16 +67,14 @@
       padding-bottom: 6px;
     }
 
-    /* ── Two-column grid ── */
     .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
     @media(max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
 
-    /* ── Table ── */
     .table-wrap {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 8px;
-      overflow: hidden;
+      overflow-x: auto;
     }
     table { width: 100%; border-collapse: collapse; }
     th {
@@ -120,52 +114,6 @@
     .down { color: var(--red); }
     .neutral { color: var(--muted); }
 
-    /* ── Accuracy strip ── */
-    .accuracy-row {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 12px;
-      margin-bottom: 20px;
-    }
-    .acc-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 14px 16px;
-    }
-    .acc-card .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
-    .acc-card .value { font-size: 26px; font-weight: 700; }
-    .acc-card .desc  { font-size: 11px; color: var(--muted); margin-top: 4px; }
-
-    /* ── Mini chart ── */
-    .sparkline { height: 40px; }
-
-    /* ── Log console ── */
-    .log-box {
-      background: #0a0e14;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 12px;
-      font-family: "SFMono-Regular", Consolas, monospace;
-      font-size: 11px;
-      color: #7ee787;
-      height: 260px;
-      overflow-y: auto;
-      white-space: pre-wrap;
-      word-break: break-all;
-    }
-    .log-err { color: var(--red); }
-    .log-warn { color: var(--yellow); }
-    .log-info { color: #7ee787; }
-
-    /* ── Mini bar ── */
-    .mini-bar-wrap { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
-    .mini-bar { height: 100%; border-radius: 3px; background: var(--accent); }
-
-    /* ── Empty state ── */
-    .empty { text-align: center; color: var(--muted); padding: 32px; font-size: 13px; }
-
-    /* ── On-chain metrics strip ── */
     .chain-row {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -184,7 +132,49 @@
     .zero  { color: var(--red); }
     .nonzero { color: var(--green); }
 
-    /* ── Price charts grid ── */
+    /* Model performance strip */
+    .perf-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .perf-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+    .perf-card.primary { border-left: 3px solid var(--accent); }
+    .perf-card .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+    .perf-card .value { font-size: 24px; font-weight: 700; }
+    .perf-card .desc  { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+    .per-asset-row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .per-asset-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 14px;
+      min-width: 140px;
+    }
+    .pa-asset { font-weight: 700; font-size: 13px; margin-bottom: 6px; }
+    .pa-stat { font-size: 12px; color: var(--muted); line-height: 1.6; }
+    .pa-stat strong { color: var(--text); }
+
+    /* CRPS trend chart */
+    .trend-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+    }
+
+    /* Price charts grid */
     .chart-grid {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
@@ -204,23 +194,22 @@
       align-items: center;
       justify-content: space-between;
       margin-bottom: 8px;
+      gap: 8px;
     }
-    .chart-asset-name {
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--text);
-    }
+    .chart-asset-name { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; }
+    .chart-stats { font-size: 11px; color: var(--muted); flex: 1; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .chart-legend {
       display: flex;
       gap: 10px;
       font-size: 11px;
       color: var(--muted);
       align-items: center;
+      white-space: nowrap;
     }
     .chart-legend span { display: flex; align-items: center; gap: 4px; }
     .legend-dot { width: 20px; height: 2px; display: inline-block; border-radius: 1px; }
-    .legend-dot.actual   { background: var(--asset-color, #58a6ff); }
-    .legend-dot.pred     { background: #d29922; border-top: 2px dashed #d29922; height: 0; }
+    .legend-dot.actual { background: var(--asset-color, #58a6ff); }
+    .legend-dot.pred   { background: #d29922; border-top: 2px dashed #d29922; height: 0; }
     .chart-loading {
       height: 160px;
       display: flex;
@@ -229,6 +218,25 @@
       color: var(--muted);
       font-size: 12px;
     }
+
+    .log-box {
+      background: #0a0e14;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 11px;
+      color: #7ee787;
+      height: 260px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .log-err { color: var(--red); }
+    .log-warn { color: var(--yellow); }
+    .log-info { color: #7ee787; }
+
+    .empty { text-align: center; color: var(--muted); padding: 32px; font-size: 13px; }
   </style>
 </head>
 <body>
@@ -240,7 +248,7 @@
 
 <main>
 
-  <!-- ── Status bar ── -->
+  <!-- Status bar -->
   <div class="status-bar" id="status-bar">
     <div class="stat-card"><div class="label">Miner Status</div><div class="value unknown" id="s-status">–</div><div class="sub" id="s-uptime">–</div></div>
     <div class="stat-card"><div class="label">Requests (24h)</div><div class="value" id="s-req24">–</div><div class="sub" id="s-req1h">– in last hour</div></div>
@@ -249,7 +257,7 @@
     <div class="stat-card"><div class="label">Restarts</div><div class="value" id="s-restarts">–</div><div class="sub">PM2 restarts</div></div>
   </div>
 
-  <!-- ── On-chain metrics ── -->
+  <!-- On-chain metrics -->
   <div class="section">
     <div class="section-header">
       On-Chain Metrics (Metagraph · Subnet 50)
@@ -265,37 +273,90 @@
     </div>
   </div>
 
-  <!-- ── Accuracy strip ── -->
+  <!-- Model performance -->
   <div class="section">
-    <div class="section-header">Accuracy (completed windows)</div>
-    <div class="accuracy-row">
-      <div class="acc-card">
-        <div class="label">Avg Price Error</div>
+    <div class="section-header">Model Performance (completed windows · BTC/ETH/SOL)</div>
+    <div class="perf-row">
+      <div class="perf-card primary">
+        <div class="label">Est. CRPS</div>
+        <div class="value" id="a-crps">–</div>
+        <div class="desc">Lower is better — validators use CRPS for scoring</div>
+      </div>
+      <div class="perf-card primary">
+        <div class="label">CRPS %</div>
+        <div class="value" id="a-crps-pct">–</div>
+        <div class="desc">CRPS as % of price — comparable across assets</div>
+      </div>
+      <div class="perf-card primary">
+        <div class="label">Calibration</div>
+        <div class="value" id="a-calib">–</div>
+        <div class="desc">% of actuals in p10–p90 band (target ~80%)</div>
+      </div>
+      <div class="perf-card">
+        <div class="label">Spread</div>
+        <div class="value" id="a-spread">–</div>
+        <div class="desc">Avg p10–p90 width as % of price</div>
+      </div>
+      <div class="perf-card">
+        <div class="label">MAE</div>
         <div class="value" id="a-mae">–</div>
-        <div class="desc">Mean absolute error vs actual price</div>
+        <div class="desc">Mean endpoint error (secondary)</div>
       </div>
-      <div class="acc-card">
-        <div class="label">Direction Accuracy</div>
-        <div class="value" id="a-dir">–</div>
-        <div class="desc">% of 24h forecasts with correct up/down direction</div>
-      </div>
-      <div class="acc-card">
-        <div class="label">Scored Windows</div>
+      <div class="perf-card">
+        <div class="label">Scored</div>
         <div class="value" id="a-scored">–</div>
-        <div class="desc">Completed forecast windows evaluated</div>
+        <div class="desc">Completed windows evaluated</div>
       </div>
-      <div class="acc-card">
-        <div class="label">Assets Seen</div>
-        <div class="value" id="a-assets">–</div>
-        <div class="desc">Distinct assets requested by validators</div>
-      </div>
+    </div>
+    <div id="per-asset-breakdown"></div>
+  </div>
+
+  <!-- CRPS trend chart -->
+  <div class="section">
+    <div class="section-header">CRPS Trend (last 48 h)</div>
+    <div class="trend-wrap">
+      <canvas id="crps-trend-canvas" height="100"></canvas>
     </div>
   </div>
 
-  <!-- ── Two-column: predictions table + log ── -->
-  <div class="two-col section">
+  <!-- Price charts -->
+  <div class="section">
+    <div class="section-header">
+      Price Charts — Predicted vs Actual
+      <span style="float:right;font-size:11px;font-weight:400;text-transform:none;letter-spacing:0" id="chart-refresh-status"></span>
+    </div>
+    <div class="chart-grid" id="charts-grid">
+      <div class="chart-loading" style="grid-column:1/-1">Loading charts…</div>
+    </div>
+  </div>
 
-    <!-- Predictions table -->
+  <!-- Diagnostics table -->
+  <div class="section">
+    <div class="section-header">Prediction Diagnostics</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Asset</th>
+            <th>CRPS ($)</th>
+            <th>CRPS %</th>
+            <th>Calibration</th>
+            <th>Spread</th>
+            <th>MAE</th>
+            <th>Steps</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="diag-tbody">
+          <tr><td colspan="9" class="empty">Loading diagnostics…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Predictions table + log -->
+  <div class="two-col section">
     <div>
       <div class="section-header">Recent Predictions</div>
       <div class="table-wrap">
@@ -317,23 +378,9 @@
         </table>
       </div>
     </div>
-
-    <!-- Live log -->
     <div>
       <div class="section-header">Live Miner Log</div>
       <div class="log-box" id="log-box">Loading logs…</div>
-    </div>
-
-  </div>
-
-  <!-- ── Per-asset price charts ── -->
-  <div class="section">
-    <div class="section-header">
-      Price Charts — Predicted vs Actual (48 h)
-      <span style="float:right;font-size:11px;font-weight:400;text-transform:none;letter-spacing:0" id="chart-refresh-status"></span>
-    </div>
-    <div class="chart-grid" id="charts-grid">
-      <div class="chart-loading" style="grid-column:1/-1">Loading charts…</div>
     </div>
   </div>
 
@@ -353,9 +400,8 @@
 
   function fmtPrice(v, asset) {
     if (v == null) return '–';
-    const sym = asset === 'XAU' ? '$' : (asset === 'BTC' ? '$' : '$');
-    if (v > 1000) return sym + v.toLocaleString(undefined, { maximumFractionDigits: 0 });
-    return sym + v.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    if (v > 1000) return '$' + v.toLocaleString(undefined, { maximumFractionDigits: 0 });
+    return '$' + v.toLocaleString(undefined, { maximumFractionDigits: 2 });
   }
 
   function assetTag(asset) {
@@ -372,22 +418,17 @@
     return `<span class="down">${s}</span>`;
   }
 
-  // ── Fetch & render ────────────────────────────────────────────────────────
-
-  async function fetchStatus() {
-    const r = await fetch('/api/status');
-    return r.json();
+  function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
-  async function fetchPredictions() {
-    const r = await fetch('/api/predictions');
-    return r.json();
-  }
+  // ── Data fetching ────────────────────────────────────────────────────────
 
-  async function fetchLogs() {
-    const r = await fetch('/api/logs');
-    return r.json();
-  }
+  async function fetchStatus()      { return (await fetch('/api/status')).json(); }
+  async function fetchPredictions()  { return (await fetch('/api/predictions')).json(); }
+  async function fetchLogs()         { return (await fetch('/api/logs')).json(); }
+
+  // ── Status rendering ─────────────────────────────────────────────────────
 
   function renderStatus(status, preds) {
     const pm2 = status.pm2 || {};
@@ -403,12 +444,65 @@
     document.getElementById('s-restarts').textContent = pm2.restarts ?? '–';
   }
 
-  function renderAccuracy(stats) {
-    document.getElementById('a-mae').textContent    = stats.avg_mae_pct != null ? stats.avg_mae_pct.toFixed(3) + '%' : 'Pending';
-    document.getElementById('a-dir').textContent    = stats.direction_accuracy_pct != null ? stats.direction_accuracy_pct.toFixed(1) + '%' : 'Pending';
+  // ── Model performance rendering ──────────────────────────────────────────
+
+  function renderPerformance(stats) {
+    const crpsEl = document.getElementById('a-crps');
+    if (stats.estimated_crps != null) {
+      crpsEl.textContent = '$' + stats.estimated_crps.toFixed(2);
+    } else {
+      crpsEl.textContent = 'Pending';
+    }
+
+    const crpsPctEl = document.getElementById('a-crps-pct');
+    if (stats.estimated_crps_pct != null) {
+      crpsPctEl.textContent = stats.estimated_crps_pct.toFixed(3) + '%';
+      crpsPctEl.className = 'value' + (stats.estimated_crps_pct < 0.1 ? ' up' : stats.estimated_crps_pct < 0.5 ? ' neutral' : ' down');
+    } else {
+      crpsPctEl.textContent = 'Pending';
+    }
+
+    const calibEl = document.getElementById('a-calib');
+    if (stats.calibration_pct != null) {
+      calibEl.textContent = stats.calibration_pct.toFixed(1) + '%';
+      const good = stats.calibration_pct >= 65 && stats.calibration_pct <= 95;
+      calibEl.className = 'value' + (good ? ' up' : ' down');
+    } else {
+      calibEl.textContent = 'Pending';
+    }
+
+    const spreadEl = document.getElementById('a-spread');
+    spreadEl.textContent = stats.avg_spread_pct != null ? stats.avg_spread_pct.toFixed(2) + '%' : 'Pending';
+
+    document.getElementById('a-mae').textContent = stats.avg_mae_pct != null ? stats.avg_mae_pct.toFixed(3) + '%' : 'Pending';
     document.getElementById('a-scored').textContent = stats.scored_count ?? 0;
-    document.getElementById('a-assets').textContent = (stats.assets || []).join(', ') || '–';
+
+    renderPerAsset(stats.per_asset || {});
   }
+
+  const ASSET_COLORS = {
+    BTC: '#f7931a', ETH: '#627eea', SOL: '#9945ff', XAU: '#ffd700',
+    SPYX: '#3fb950', NVDAX: '#58a6ff', TSLAX: '#f85149', AAPLX: '#79c0ff', GOOGLX: '#d29922',
+  };
+
+  function renderPerAsset(perAsset) {
+    const el = document.getElementById('per-asset-breakdown');
+    if (!el) return;
+    const assets = Object.entries(perAsset).filter(([_, v]) => v && v.count > 0);
+    if (assets.length === 0) { el.innerHTML = ''; return; }
+    el.innerHTML = `<div class="per-asset-row">${assets.map(([asset, v]) => {
+      const color = ASSET_COLORS[asset] || '#8b949e';
+      return `<div class="per-asset-card" style="border-left:3px solid ${color}">
+        <div class="pa-asset">${asset}</div>
+        <div class="pa-stat">CRPS: <strong>${v.avg_crps != null ? '$' + v.avg_crps.toFixed(2) : '–'}</strong></div>
+        <div class="pa-stat">MAE: <strong>${v.avg_mae_pct != null ? v.avg_mae_pct.toFixed(3) + '%' : '–'}</strong></div>
+        <div class="pa-stat">Cal: <strong>${v.calibration_pct != null ? v.calibration_pct.toFixed(0) + '%' : '–'}</strong></div>
+        <div class="pa-stat">n=${v.count}</div>
+      </div>`;
+    }).join('')}</div>`;
+  }
+
+  // ── Predictions table rendering ──────────────────────────────────────────
 
   function renderPredictions(records) {
     const tbody = document.getElementById('pred-tbody');
@@ -416,7 +510,6 @@
       tbody.innerHTML = '<tr><td colspan="7" class="empty">No predictions logged yet — waiting for first validator request…</td></tr>';
       return;
     }
-
     tbody.innerHTML = records.slice(0, 30).map(r => {
       const meanStart = r.mean_path ? r.mean_path[0] : null;
       const meanEnd   = r.mean_path ? r.mean_path[r.mean_path.length - 1] : null;
@@ -425,96 +518,78 @@
       const badge     = scored
         ? '<span class="badge-scored">Scored</span>'
         : '<span class="badge-pending">Pending</span>';
-
-      // Show predicted end price vs start price direction
       let predCell = fmtPrice(meanStart, r.asset);
       if (meanEnd != null && meanStart != null) {
-        const dir = meanEnd > meanStart ? '▲' : '▼';
+        const dir = meanEnd > meanStart ? '\u25B2' : '\u25BC';
         const cls = meanEnd > meanStart ? 'up' : 'down';
         predCell += ` <span class="${cls}" style="font-size:11px">${dir} ${fmtPrice(meanEnd, r.asset)}</span>`;
       }
-
       return `<tr>
         <td style="color:var(--muted);font-size:12px">${fmtTime(r.logged_at)}</td>
         <td>${assetTag(r.asset)}</td>
         <td>${fmtPrice(r.price_at_request, r.asset)}</td>
         <td>${predCell}</td>
-        <td>${actual != null ? fmtPrice(actual, r.asset) : '<span class="neutral">–</span>'}</td>
+        <td>${actual != null ? fmtPrice(actual, r.asset) : '<span class="neutral">\u2013</span>'}</td>
         <td>${colorPct(r.mae_pct)}</td>
         <td>${badge}</td>
       </tr>`;
     }).join('');
   }
 
+  // ── Log rendering ─────────────────────────────────────────────────────────
+
   function renderLogs(lines) {
     const box = document.getElementById('log-box');
-    if (!lines || lines.length === 0) {
-      box.textContent = 'No log output available.';
-      return;
-    }
+    if (!lines || lines.length === 0) { box.textContent = 'No log output available.'; return; }
     box.innerHTML = lines.map(line => {
-      if (/error|exception|traceback/i.test(line))
-        return `<span class="log-err">${escHtml(line)}</span>`;
-      if (/warning|warn/i.test(line))
-        return `<span class="log-warn">${escHtml(line)}</span>`;
+      if (/error|exception|traceback/i.test(line)) return `<span class="log-err">${escHtml(line)}</span>`;
+      if (/warning|warn/i.test(line)) return `<span class="log-warn">${escHtml(line)}</span>`;
       return `<span class="log-info">${escHtml(line)}</span>`;
     }).join('\n');
     box.scrollTop = box.scrollHeight;
-  }
-
-  function escHtml(s) {
-    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
   // ── On-chain metrics ──────────────────────────────────────────────────────
 
   function renderChainMetrics(d) {
     const statusEl = document.getElementById('chain-refresh-status');
-
     if (d.error) {
       if (statusEl) { statusEl.textContent = 'Chain error: ' + d.error; statusEl.style.color = 'var(--red)'; }
       return;
     }
-
     function setChainVal(id, val, decimals) {
       const el = document.getElementById(id);
       if (!el) return;
       if (val == null) { el.textContent = '–'; el.className = 'value'; return; }
-      const rounded = val.toFixed(decimals);
-      el.textContent = rounded;
+      el.textContent = val.toFixed(decimals);
       el.className = 'value ' + (val > 0 ? 'nonzero' : 'zero');
     }
-
-    setChainVal('c-incentive', d.incentive,       6);
-    setChainVal('c-emission',  d.emission,        6);
+    setChainVal('c-incentive', d.incentive, 6);
+    setChainVal('c-emission',  d.emission, 6);
     setChainVal('c-vtrust',    d.validator_trust, 4);
-    setChainVal('c-pruning',   d.pruning_score,   6);
-    setChainVal('c-consensus', d.consensus,       4);
-
-    // Stake shown as integer TAO
+    setChainVal('c-pruning',   d.pruning_score, 6);
+    setChainVal('c-consensus', d.consensus, 4);
     const stakeEl = document.getElementById('c-stake');
     if (stakeEl) {
       if (d.stake == null) { stakeEl.textContent = '–'; stakeEl.className = 'value'; }
       else {
-        stakeEl.textContent = d.stake.toLocaleString(undefined, { maximumFractionDigits: 2 }) + ' ש';
+        stakeEl.textContent = d.stake.toLocaleString(undefined, { maximumFractionDigits: 2 }) + ' \u05E9';
         stakeEl.className = 'value ' + (d.stake > 0 ? 'nonzero' : 'zero');
       }
     }
-
     if (statusEl) {
       const fetched = d.fetched_at ? new Date(d.fetched_at).toLocaleTimeString() : '?';
-      statusEl.textContent = 'Fetched ' + fetched + ' · refreshes every 10 min';
+      statusEl.textContent = 'Fetched ' + fetched + ' \u00B7 refreshes every 10 min';
       statusEl.style.color = 'var(--muted)';
     }
   }
 
   async function refreshChain() {
     const statusEl = document.getElementById('chain-refresh-status');
-    if (statusEl) { statusEl.textContent = 'Syncing chain…'; statusEl.style.color = 'var(--yellow)'; }
+    if (statusEl) { statusEl.textContent = 'Syncing chain\u2026'; statusEl.style.color = 'var(--yellow)'; }
     try {
       const r = await fetch('/api/chain');
-      const d = await r.json();
-      renderChainMetrics(d);
+      renderChainMetrics(await r.json());
     } catch (e) {
       if (statusEl) { statusEl.textContent = 'Chain fetch error: ' + e.message; statusEl.style.color = 'var(--red)'; }
     }
@@ -524,14 +599,12 @@
 
   async function refresh() {
     const el = document.getElementById('refresh-status');
-    el.textContent = 'Refreshing…';
+    el.textContent = 'Refreshing\u2026';
     el.className = 'loading';
     try {
-      const [status, preds, logs] = await Promise.all([
-        fetchStatus(), fetchPredictions(), fetchLogs()
-      ]);
+      const [status, preds, logs] = await Promise.all([fetchStatus(), fetchPredictions(), fetchLogs()]);
       renderStatus(status, preds);
-      renderAccuracy(preds.stats || {});
+      renderPerformance(preds.stats || {});
       renderPredictions(preds.records || []);
       renderLogs(logs.lines || []);
       el.textContent = 'Updated ' + new Date().toLocaleTimeString();
@@ -543,34 +616,21 @@
   }
 
   refresh();
-  setInterval(refresh, 60000); // auto-refresh every 60 seconds
-
+  setInterval(refresh, 60000);
   refreshChain();
-  setInterval(refreshChain, 10 * 60 * 1000); // chain refresh every 10 minutes
+  setInterval(refreshChain, 10 * 60 * 1000);
 </script>
 
-<!-- Chart.js + date-fns time adapter -->
+<!-- Chart.js + date-fns adapter -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 
 <script>
-  // ── Per-asset colour palette ─────────────────────────────────────────────
-  const ASSET_COLORS = {
-    BTC:    '#f7931a',
-    ETH:    '#627eea',
-    SOL:    '#9945ff',
-    XAU:    '#ffd700',
-    SPYX:   '#3fb950',
-    NVDAX:  '#58a6ff',
-    TSLAX:  '#f85149',
-    AAPLX:  '#79c0ff',
-    GOOGLX: '#d29922',
-  };
-
-  // Preferred display order
   const ASSET_ORDER = ['BTC', 'ETH', 'SOL', 'XAU', 'SPYX', 'NVDAX', 'TSLAX', 'AAPLX', 'GOOGLX'];
-
   const _chartInstances = {};
+  let _crpsTrendChart = null;
+
+  // ── Chart card builder ────────────────────────────────────────────────────
 
   function buildChartCard(asset) {
     const color = ASSET_COLORS[asset] || '#8b949e';
@@ -581,6 +641,7 @@
     card.innerHTML = `
       <div class="chart-card-header">
         <span class="chart-asset-name">${asset}</span>
+        <span class="chart-stats" id="chart-stats-${asset}"></span>
         <span class="chart-legend">
           <span><span class="legend-dot actual"></span>Actual</span>
           <span><span class="legend-dot pred"></span>Predicted</span>
@@ -590,7 +651,9 @@
     return card;
   }
 
-  function renderAssetChart(asset, data, color) {
+  // ── Per-asset chart rendering ─────────────────────────────────────────────
+
+  function renderAssetChart(asset, assetData, color) {
     const existing = _chartInstances[asset];
     if (existing) { existing.destroy(); delete _chartInstances[asset]; }
 
@@ -598,59 +661,74 @@
     if (!ctx) return;
 
     const toPoints = arr => (arr || []).map(p => ({ x: new Date(p.t), y: p.price }));
+    const predictions = assetData.predictions || [];
+    const actual48h = toPoints(assetData.actual_48h);
 
-    const actualPts    = toPoints(data.actual);
-    const predictedPts = toPoints(data.predicted);
-    const p10Pts       = toPoints(data.p10);
-    const p90Pts       = toPoints(data.p90);
+    const datasets = [];
+    const alphaHex = v => Math.round(v * 255).toString(16).padStart(2, '0');
+
+    const maxPreds = Math.min(predictions.length, 3);
+    for (let i = maxPreds - 1; i >= 0; i--) {
+      const pred = predictions[i];
+      const age = i;
+      const opacity = Math.max(0.25, 1.0 - age * 0.3);
+
+      const predPts = toPoints(pred.predicted);
+      const p10Pts  = toPoints(pred.p10);
+      const p90Pts  = toPoints(pred.p90);
+
+      let predColor = '#d29922';
+      if (pred.window_complete && pred.crps_pct != null) {
+        if (pred.crps_pct < 0.1) predColor = '#3fb950';
+        else if (pred.crps_pct > 0.5) predColor = '#f85149';
+      }
+
+      if (p10Pts.length > 0 && p90Pts.length > 0) {
+        datasets.push({
+          label: `P10${i > 0 ? '-' + i : ''}`,
+          data: p10Pts,
+          borderColor: 'transparent',
+          backgroundColor: 'transparent',
+          borderWidth: 0, pointRadius: 0, fill: false,
+          order: 20 + i * 3,
+        });
+        datasets.push({
+          label: `P90${i > 0 ? '-' + i : ''}`,
+          data: p90Pts,
+          borderColor: 'transparent',
+          backgroundColor: predColor + alphaHex(opacity * 0.12),
+          borderWidth: 0, pointRadius: 0, fill: '-1',
+          order: 20 + i * 3 + 1,
+        });
+      }
+
+      datasets.push({
+        label: i === 0 ? 'Predicted' : `Pred-${i}`,
+        data: predPts,
+        borderColor: predColor + alphaHex(opacity),
+        backgroundColor: 'transparent',
+        borderWidth: i === 0 ? 2 : 1.5,
+        borderDash: [5, 4],
+        pointRadius: 0,
+        tension: 0.2,
+        order: 20 + i * 3 + 2,
+      });
+    }
+
+    datasets.push({
+      label: 'Actual',
+      data: actual48h,
+      borderColor: color,
+      backgroundColor: 'transparent',
+      borderWidth: 2,
+      pointRadius: 0,
+      tension: 0.2,
+      order: 1,
+    });
 
     _chartInstances[asset] = new Chart(ctx, {
       type: 'line',
-      data: {
-        datasets: [
-          {
-            label: 'P10',
-            data: p10Pts,
-            borderColor: 'transparent',
-            backgroundColor: 'transparent',
-            borderWidth: 0,
-            pointRadius: 0,
-            fill: false,
-            order: 4,
-          },
-          {
-            label: 'P90',
-            data: p90Pts,
-            borderColor: 'transparent',
-            backgroundColor: `${color}18`,
-            borderWidth: 0,
-            pointRadius: 0,
-            fill: '-1',   // fill down to P10 dataset
-            order: 3,
-          },
-          {
-            label: 'Predicted',
-            data: predictedPts,
-            borderColor: '#d29922',
-            backgroundColor: 'transparent',
-            borderWidth: 1.5,
-            borderDash: [5, 4],
-            pointRadius: 0,
-            tension: 0.2,
-            order: 2,
-          },
-          {
-            label: 'Actual',
-            data: actualPts,
-            borderColor: color,
-            backgroundColor: 'transparent',
-            borderWidth: 2,
-            pointRadius: 0,
-            tension: 0.2,
-            order: 1,
-          },
-        ],
-      },
+      data: { datasets },
       options: {
         animation: false,
         responsive: true,
@@ -663,9 +741,9 @@
             borderWidth: 1,
             titleColor: '#8b949e',
             bodyColor: '#e6edf3',
+            filter: item => !item.dataset.label.startsWith('P10') && !item.dataset.label.startsWith('P90'),
             callbacks: {
               label: ctx => {
-                if (ctx.dataset.label === 'P10' || ctx.dataset.label === 'P90') return null;
                 const v = ctx.parsed.y;
                 if (v == null) return null;
                 const fmt = v > 1000
@@ -679,18 +757,14 @@
         scales: {
           x: {
             type: 'time',
-            time: {
-              displayFormats: { hour: 'HH:mm', day: 'MMM d' },
-              tooltipFormat: 'MMM d, HH:mm',
-            },
+            time: { displayFormats: { hour: 'HH:mm', day: 'MMM d' }, tooltipFormat: 'MMM d, HH:mm' },
             grid: { color: '#30363d' },
-            ticks: { color: '#8b949e', maxTicksLimit: 5, font: { size: 10 } },
+            ticks: { color: '#8b949e', maxTicksLimit: 6, font: { size: 10 } },
           },
           y: {
             grid: { color: '#30363d' },
             ticks: {
-              color: '#8b949e',
-              font: { size: 10 },
+              color: '#8b949e', font: { size: 10 },
               callback: v => v > 1000
                 ? '$' + v.toLocaleString(undefined, { maximumFractionDigits: 0 })
                 : '$' + v.toLocaleString(undefined, { maximumFractionDigits: 2 }),
@@ -699,34 +773,165 @@
         },
       },
     });
+
+    const statsEl = document.getElementById(`chart-stats-${asset}`);
+    if (statsEl && predictions.length > 0) {
+      const latest = predictions[0];
+      const parts = [];
+      if (latest.crps_estimate != null) parts.push(`CRPS: $${latest.crps_estimate.toFixed(1)}`);
+      if (latest.calibration_pct != null) parts.push(`Cal: ${latest.calibration_pct.toFixed(0)}%`);
+      if (latest.spread_pct != null) parts.push(`Spread: ${latest.spread_pct.toFixed(1)}%`);
+      statsEl.textContent = parts.join(' \u00B7 ');
+      if (latest.calibration_pct != null) {
+        if (latest.calibration_pct >= 70 && latest.calibration_pct <= 90) statsEl.style.color = 'var(--green)';
+        else if (latest.calibration_pct >= 50) statsEl.style.color = 'var(--yellow)';
+        else statsEl.style.color = 'var(--red)';
+      }
+    }
   }
+
+  // ── CRPS trend chart ──────────────────────────────────────────────────────
+
+  function renderCRPSTrend(chartsData) {
+    const ctx = document.getElementById('crps-trend-canvas');
+    if (!ctx) return;
+    if (_crpsTrendChart) { _crpsTrendChart.destroy(); _crpsTrendChart = null; }
+
+    const datasets = [];
+    for (const [asset, data] of Object.entries(chartsData)) {
+      const color = ASSET_COLORS[asset] || '#8b949e';
+      const points = [];
+      for (const pred of (data.predictions || [])) {
+        if (pred.crps_pct != null && pred.logged_at) {
+          points.push({ x: new Date(pred.logged_at), y: pred.crps_pct });
+        }
+      }
+      if (points.length > 0) {
+        points.sort((a, b) => a.x - b.x);
+        datasets.push({
+          label: asset,
+          data: points,
+          borderColor: color,
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          pointRadius: 4,
+          pointBackgroundColor: color,
+          tension: 0.2,
+        });
+      }
+    }
+
+    if (datasets.length === 0) {
+      ctx.parentElement.innerHTML = '<div class="chart-loading">No CRPS data yet \u2014 waiting for scored predictions</div>';
+      return;
+    }
+
+    _crpsTrendChart = new Chart(ctx, {
+      type: 'line',
+      data: { datasets },
+      options: {
+        animation: false,
+        responsive: true,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { labels: { color: '#8b949e', font: { size: 11 } } },
+          tooltip: {
+            backgroundColor: '#161b22', borderColor: '#30363d', borderWidth: 1,
+            titleColor: '#8b949e', bodyColor: '#e6edf3',
+            callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y?.toFixed(4) ?? '\u2013'}%` },
+          },
+        },
+        scales: {
+          x: {
+            type: 'time',
+            time: { displayFormats: { hour: 'HH:mm', day: 'MMM d' }, tooltipFormat: 'MMM d, HH:mm' },
+            grid: { color: '#30363d' },
+            ticks: { color: '#8b949e', maxTicksLimit: 8, font: { size: 10 } },
+          },
+          y: {
+            title: { display: true, text: 'CRPS (% of price)', color: '#8b949e', font: { size: 11 } },
+            grid: { color: '#30363d' },
+            ticks: { color: '#8b949e', font: { size: 10 }, callback: v => v.toFixed(3) + '%' },
+          },
+        },
+      },
+    });
+  }
+
+  // ── Diagnostics table ─────────────────────────────────────────────────────
+
+  function renderDiagnostics(chartsData) {
+    const tbody = document.getElementById('diag-tbody');
+    if (!tbody) return;
+
+    const rows = [];
+    for (const [asset, data] of Object.entries(chartsData)) {
+      for (const pred of (data.predictions || [])) {
+        rows.push({
+          logged_at: pred.logged_at,
+          asset,
+          crps: pred.crps_estimate,
+          crps_pct: pred.crps_pct,
+          calibration: pred.calibration_pct,
+          spread: pred.spread_pct,
+          mae: pred.mae_pct,
+          steps: pred.scored_steps,
+          complete: pred.window_complete,
+        });
+      }
+    }
+    rows.sort((a, b) => (b.logged_at || '').localeCompare(a.logged_at || ''));
+
+    if (rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="9" class="empty">No diagnostics available yet</td></tr>';
+      return;
+    }
+
+    function cv(val, lo, hi, unit) {
+      if (val == null) return '<span class="neutral">\u2013</span>';
+      let cls = 'neutral';
+      if (lo != null && hi != null) cls = (val >= lo && val <= hi) ? 'up' : 'down';
+      else if (hi != null) cls = val <= hi ? 'up' : (val <= hi * 3 ? 'neutral' : 'down');
+      return `<span class="${cls}">${val.toFixed(unit === '%' ? 2 : 2)}${unit || ''}</span>`;
+    }
+
+    tbody.innerHTML = rows.slice(0, 25).map(r => {
+      const badge = r.complete
+        ? '<span class="badge-scored">Complete</span>'
+        : '<span class="badge-pending">In progress</span>';
+      return `<tr>
+        <td style="color:var(--muted);font-size:12px">${fmtTime(r.logged_at)}</td>
+        <td>${assetTag(r.asset)}</td>
+        <td>${r.crps != null ? '$' + r.crps.toFixed(2) : '<span class="neutral">\u2013</span>'}</td>
+        <td>${cv(r.crps_pct, null, 0.3, '%')}</td>
+        <td>${cv(r.calibration, 65, 95, '%')}</td>
+        <td>${cv(r.spread, null, 5, '%')}</td>
+        <td>${cv(r.mae, null, 1, '%')}</td>
+        <td style="color:var(--muted)">${r.steps ?? '\u2013'}</td>
+        <td>${badge}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // ── Charts refresh ────────────────────────────────────────────────────────
 
   async function refreshCharts() {
     const statusEl = document.getElementById('chart-refresh-status');
-    if (statusEl) { statusEl.textContent = 'Updating…'; statusEl.style.color = 'var(--yellow)'; }
+    if (statusEl) { statusEl.textContent = 'Updating\u2026'; statusEl.style.color = 'var(--yellow)'; }
 
     try {
       const r = await fetch('/api/charts');
       const data = await r.json();
-
       const grid = document.getElementById('charts-grid');
 
-      // Build cards in preferred order, then any extra assets not in the order list
       const assetsInData = Object.keys(data);
       const ordered = [...ASSET_ORDER.filter(a => assetsInData.includes(a)),
                        ...assetsInData.filter(a => !ASSET_ORDER.includes(a))];
 
       if (ordered.length === 0) {
-        grid.innerHTML = '<div class="chart-loading" style="grid-column:1/-1">No predictions logged yet — waiting for data…</div>';
+        grid.innerHTML = '<div class="chart-loading" style="grid-column:1/-1">No predictions logged yet \u2014 waiting for data\u2026</div>';
         return;
       }
-
-      // Add any missing cards in the right order
-      ordered.forEach(asset => {
-        if (!document.getElementById(`chart-card-${asset}`)) {
-          grid.innerHTML = ''; // rebuild order from scratch
-        }
-      });
 
       if (!document.getElementById(`chart-card-${ordered[0]}`)) {
         grid.innerHTML = '';
@@ -738,6 +943,9 @@
         renderAssetChart(asset, data[asset], color);
       });
 
+      renderCRPSTrend(data);
+      renderDiagnostics(data);
+
       if (statusEl) {
         statusEl.textContent = 'Updated ' + new Date().toLocaleTimeString();
         statusEl.style.color = 'var(--muted)';
@@ -747,7 +955,6 @@
     }
   }
 
-  // Initial load + refresh every 5 minutes
   refreshCharts();
   setInterval(refreshCharts, 5 * 60 * 1000);
 </script>

@@ -8,8 +8,10 @@ and serves a live-updating HTML dashboard.
 """
 
 import json
+import math
 import os
 import subprocess
+from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -201,6 +203,16 @@ def compute_mae(mean_path, actual_prices_by_time):
     return None
 
 
+def _gaussian_crps(mu, sigma, actual):
+    """Closed-form CRPS for a Gaussian N(mu, sigma^2) vs observation *actual*."""
+    if sigma <= 0:
+        return abs(actual - mu)
+    z = (actual - mu) / sigma
+    phi_z = math.exp(-0.5 * z * z) / math.sqrt(2 * math.pi)
+    big_phi_z = 0.5 * (1 + math.erf(z / math.sqrt(2)))
+    return sigma * (z * (2 * big_phi_z - 1) + 2 * phi_z - 1 / math.sqrt(math.pi))
+
+
 def enrich_records(records):
     """
     For each log record that has a completed forecast window, try to fetch
@@ -256,15 +268,11 @@ def enrich_records(records):
 
 def _batch_score(records, now):
     """
-    Score a list of completed prediction records without making one yfinance call
-    per record (which triggers rate limits).  Instead, download a single price
-    history block per asset and look up each end_time in that block.
+    Score a list of completed prediction records by downloading one price
+    history block per asset and looking up each end_time.
 
-    Returns a list of dicts: {asset, mae_pct, direction_correct}
+    Returns a list of dicts with MAE, direction, CRPS, calibration, and spread.
     """
-    from collections import defaultdict
-
-    # Group records by asset
     by_asset = defaultdict(list)
     for rec in records:
         asset = rec.get("asset")
@@ -277,7 +285,6 @@ def _batch_score(records, now):
         if not ticker:
             continue
 
-        # Find the time range for this batch
         end_times = []
         for rec in recs:
             try:
@@ -291,18 +298,13 @@ def _batch_score(records, now):
             continue
 
         window_start = min(end_times) - timedelta(minutes=15)
-        window_end   = max(end_times) + timedelta(minutes=15)
-        # Cap to recent enough — nothing older than 48h
+        window_end = max(end_times) + timedelta(minutes=15)
         window_start = max(window_start, now - timedelta(hours=48))
 
         try:
             df = yf.download(
-                ticker,
-                start=window_start,
-                end=window_end,
-                interval="1m",
-                progress=False,
-                auto_adjust=True,
+                ticker, start=window_start, end=window_end,
+                interval="1m", progress=False, auto_adjust=True,
             )
             if df.empty:
                 continue
@@ -312,22 +314,22 @@ def _batch_score(records, now):
         except Exception:
             continue
 
-        # Score each record by looking up the nearest 1-min bar to end_time
         for rec in recs:
             try:
                 et = datetime.fromisoformat(rec["end_time"].replace("Z", "+00:00"))
                 if et.tzinfo is None:
                     et = et.replace(tzinfo=timezone.utc)
                 if et > now - timedelta(minutes=10):
-                    continue  # too recent
+                    continue
 
-                # Find the closest bar
                 idx = close.index.searchsorted(et)
                 if idx >= len(close):
                     idx = len(close) - 1
                 actual_end = float(close.iloc[idx])
 
                 mean_path = rec.get("mean_path", [])
+                p10_path = rec.get("p10_path", [])
+                p90_path = rec.get("p90_path", [])
                 price_at_req = rec.get("price_at_request")
                 if not mean_path or actual_end <= 0:
                     continue
@@ -341,10 +343,31 @@ def _batch_score(records, now):
                     actual_dir = actual_end > float(price_at_req)
                     direction_correct = pred_dir == actual_dir
 
+                crps_endpoint = None
+                crps_pct = None
+                in_band = None
+                spread_pct = None
+                if (p10_path and p90_path
+                        and len(p10_path) == len(mean_path)
+                        and len(p90_path) == len(mean_path)):
+                    p10_end = float(p10_path[-1])
+                    p90_end = float(p90_path[-1])
+                    sigma = (p90_end - p10_end) / 2.56
+                    crps_endpoint = round(_gaussian_crps(pred_end, sigma, actual_end), 4)
+                    in_band = p10_end <= actual_end <= p90_end
+                    if pred_end > 0:
+                        spread_pct = round((p90_end - p10_end) / pred_end * 100, 3)
+                    if price_at_req and float(price_at_req) > 0:
+                        crps_pct = round(crps_endpoint / float(price_at_req) * 100, 4)
+
                 results.append({
                     "asset": asset,
                     "mae_pct": mae_pct,
                     "direction_correct": direction_correct,
+                    "crps_endpoint": crps_endpoint,
+                    "crps_pct": crps_pct,
+                    "in_band": in_band,
+                    "spread_pct": spread_pct,
                 })
             except Exception:
                 pass
@@ -418,10 +441,44 @@ def api_predictions():
         dir_correct = [r for r in scored if r.get("direction_correct") is True]
         dir_accuracy = round(len(dir_correct) / len(scored) * 100, 1) if scored else None
 
+        crps_vals = [r["crps_endpoint"] for r in scored if r.get("crps_endpoint") is not None]
+        avg_crps = round(sum(crps_vals) / len(crps_vals), 2) if crps_vals else None
+
+        crps_pct_vals = [r["crps_pct"] for r in scored if r.get("crps_pct") is not None]
+        avg_crps_pct = round(sum(crps_pct_vals) / len(crps_pct_vals), 4) if crps_pct_vals else None
+
+        in_band_vals = [r["in_band"] for r in scored if r.get("in_band") is not None]
+        calibration_pct = round(
+            sum(1 for v in in_band_vals if v) / len(in_band_vals) * 100, 1
+        ) if in_band_vals else None
+
+        spread_vals = [r["spread_pct"] for r in scored if r.get("spread_pct") is not None]
+        avg_spread_pct = round(sum(spread_vals) / len(spread_vals), 3) if spread_vals else None
+
+        per_asset = {}
+        for a in SCORING_ASSETS:
+            a_scored = [r for r in scored if r["asset"] == a]
+            a_crps = [r["crps_endpoint"] for r in a_scored if r.get("crps_endpoint") is not None]
+            a_mae = [r["mae_pct"] for r in a_scored]
+            a_calib = [r["in_band"] for r in a_scored if r.get("in_band") is not None]
+            per_asset[a] = {
+                "count": len(a_scored),
+                "avg_crps": round(sum(a_crps) / len(a_crps), 2) if a_crps else None,
+                "avg_mae_pct": round(sum(a_mae) / len(a_mae), 3) if a_mae else None,
+                "calibration_pct": round(
+                    sum(1 for v in a_calib if v) / len(a_calib) * 100, 1
+                ) if a_calib else None,
+            }
+
         cached_stats = {
             "avg_mae_pct": avg_mae_pct,
             "direction_accuracy_pct": dir_accuracy,
             "scored_count": len(scored),
+            "estimated_crps": avg_crps,
+            "estimated_crps_pct": avg_crps_pct,
+            "calibration_pct": calibration_pct,
+            "avg_spread_pct": avg_spread_pct,
+            "per_asset": per_asset,
         }
         _stats_cache = cached_stats
         _stats_cache_ts = now
@@ -433,6 +490,11 @@ def api_predictions():
             "avg_mae_pct": cached_stats["avg_mae_pct"],
             "direction_accuracy_pct": cached_stats["direction_accuracy_pct"],
             "scored_count": cached_stats["scored_count"],
+            "estimated_crps": cached_stats.get("estimated_crps"),
+            "estimated_crps_pct": cached_stats.get("estimated_crps_pct"),
+            "calibration_pct": cached_stats.get("calibration_pct"),
+            "avg_spread_pct": cached_stats.get("avg_spread_pct"),
+            "per_asset": cached_stats.get("per_asset", {}),
             "assets": assets_seen,
         },
     })
@@ -447,9 +509,8 @@ def api_logs():
 @app.route("/api/charts")
 def api_charts():
     """
-    For each asset, return the most recent prediction's mean/p10/p90 paths as
-    timestamped series, plus 48 hours of actual price history from yfinance.
-    Results are cached for CHART_CACHE_TTL seconds to avoid hammering yfinance.
+    For each asset return the last N predictions with per-prediction CRPS,
+    calibration, and spread, plus 48h of actual price history for the overview.
     """
     global _chart_cache, _chart_cache_ts
     now = datetime.now(timezone.utc)
@@ -461,98 +522,199 @@ def api_charts():
     ):
         return jsonify(_chart_cache)
 
+    MAX_PREDS_PER_ASSET = 5
     cutoff_48h = now - timedelta(hours=48)
-    records = load_prediction_log()
+    records = load_prediction_log(500)
 
-    # Find the most recent prediction per asset within the last 48 hours
-    latest_per_asset: dict = {}
-    for rec in records:
+    preds_per_asset: dict = defaultdict(list)
+    for rec in reversed(records):
         asset = rec.get("asset")
         if not asset:
             continue
         try:
-            logged_at = datetime.fromisoformat(rec.get("logged_at", "").replace("Z", "+00:00"))
+            logged_at = datetime.fromisoformat(
+                rec.get("logged_at", "").replace("Z", "+00:00"))
             if logged_at.tzinfo is None:
                 logged_at = logged_at.replace(tzinfo=timezone.utc)
         except Exception:
             continue
         if logged_at < cutoff_48h:
             continue
-        existing = latest_per_asset.get(asset)
-        if existing is None:
-            latest_per_asset[asset] = rec
-        else:
-            try:
-                existing_dt = datetime.fromisoformat(existing.get("logged_at", "").replace("Z", "+00:00"))
-                if existing_dt.tzinfo is None:
-                    existing_dt = existing_dt.replace(tzinfo=timezone.utc)
-                if logged_at > existing_dt:
-                    latest_per_asset[asset] = rec
-            except Exception:
-                pass
+        if len(preds_per_asset[asset]) >= MAX_PREDS_PER_ASSET:
+            continue
+        preds_per_asset[asset].append(rec)
 
     result: dict = {}
 
-    for asset, rec in latest_per_asset.items():
+    for asset, recs in preds_per_asset.items():
         ticker = ASSET_TICKERS.get(asset)
         if not ticker:
             continue
 
-        start_time_str = rec.get("start_time", "")
-        time_increment = rec.get("time_increment", 300)
-        mean_path = rec.get("mean_path") or []
-        p10_path = rec.get("p10_path") or []
-        p90_path = rec.get("p90_path") or []
-
-        if not mean_path or not start_time_str:
-            continue
-
-        try:
-            start_dt = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
-            if start_dt.tzinfo is None:
-                start_dt = start_dt.replace(tzinfo=timezone.utc)
-        except Exception:
-            continue
-
-        def _to_series(path):
-            return [
-                {"t": (start_dt + timedelta(seconds=i * time_increment)).isoformat(), "price": round(float(p), 4)}
-                for i, p in enumerate(path)
-            ]
-
-        predicted = _to_series(mean_path)
-        p10_series = _to_series(p10_path)
-        p90_series = _to_series(p90_path)
-
-        # Fetch 48 h of 1-hour actual price bars
-        actual = []
+        close_series = None
+        actual_48h = []
         try:
             df = yf.download(
-                ticker,
-                start=cutoff_48h,
-                end=now,
-                interval="1h",
-                progress=False,
-                auto_adjust=True,
+                ticker, start=cutoff_48h, end=now,
+                interval="5m", progress=False, auto_adjust=True,
             )
             if not df.empty:
                 close = df["Close"]
-                # Handle multi-level columns (newer yfinance versions)
                 if hasattr(close, "columns"):
                     close = close.iloc[:, 0]
+                close_series = close
                 for ts, price in close.items():
                     if hasattr(ts, "isoformat"):
-                        actual.append({"t": ts.isoformat(), "price": round(float(price), 4)})
+                        actual_48h.append({"t": ts.isoformat(), "price": round(float(price), 4)})
         except Exception:
             pass
 
-        result[asset] = {
-            "predicted": predicted,
-            "p10": p10_series,
-            "p90": p90_series,
-            "actual": actual,
-            "start_time": start_time_str,
-        }
+        predictions = []
+        for rec in recs:
+            start_time_str = rec.get("start_time", "")
+            time_increment = rec.get("time_increment", 300)
+            end_time_str = rec.get("end_time", "")
+            mean_path = rec.get("mean_path") or []
+            p10_path = rec.get("p10_path") or []
+            p90_path = rec.get("p90_path") or []
+
+            if not mean_path or not start_time_str:
+                continue
+
+            try:
+                start_dt = datetime.fromisoformat(
+                    start_time_str.replace("Z", "+00:00"))
+                if start_dt.tzinfo is None:
+                    start_dt = start_dt.replace(tzinfo=timezone.utc)
+            except Exception:
+                continue
+
+            num_steps = len(mean_path)
+            pred_times = [
+                start_dt + timedelta(seconds=i * time_increment)
+                for i in range(num_steps)
+            ]
+
+            def _ds(path, times):
+                """Downsample a path to <=120 points for JSON payload."""
+                n = len(path)
+                if n <= 120:
+                    return [
+                        {"t": t.isoformat(), "price": round(float(p), 4)}
+                        for t, p in zip(times, path)
+                    ]
+                step = max(1, n // 120)
+                idxs = list(range(0, n, step))
+                if n - 1 not in idxs:
+                    idxs.append(n - 1)
+                return [
+                    {"t": times[i].isoformat(), "price": round(float(path[i]), 4)}
+                    for i in idxs
+                ]
+
+            pred_series = _ds(mean_path, pred_times)
+            p10_series = _ds(p10_path, pred_times) if len(p10_path) == num_steps else []
+            p90_series = _ds(p90_path, pred_times) if len(p90_path) == num_steps else []
+
+            crps_sum = 0.0
+            crps_count = 0
+            in_band_hit = 0
+            in_band_count = 0
+            spread_sum = 0.0
+            spread_count = 0
+
+            if close_series is not None and len(close_series) > 0:
+                for i, step_time in enumerate(pred_times):
+                    if step_time > now - timedelta(minutes=5):
+                        break
+                    idx = close_series.index.searchsorted(step_time)
+                    if idx >= len(close_series):
+                        idx = len(close_series) - 1
+                    if idx < 0:
+                        continue
+                    bar_time = close_series.index[idx]
+                    try:
+                        diff = abs((bar_time.to_pydatetime().replace(
+                            tzinfo=timezone.utc) - step_time).total_seconds())
+                    except Exception:
+                        diff = 9999
+                    if diff > 900:
+                        continue
+
+                    actual_price = float(close_series.iloc[idx])
+                    mu = float(mean_path[i])
+                    if (p10_path and p90_path
+                            and i < len(p10_path) and i < len(p90_path)):
+                        p10_v = float(p10_path[i])
+                        p90_v = float(p90_path[i])
+                        sigma = (p90_v - p10_v) / 2.56
+                        if sigma > 0:
+                            crps_sum += _gaussian_crps(mu, sigma, actual_price)
+                            crps_count += 1
+                        in_band_count += 1
+                        if p10_v <= actual_price <= p90_v:
+                            in_band_hit += 1
+                        if mu > 0:
+                            spread_sum += (p90_v - p10_v) / mu * 100
+                            spread_count += 1
+
+            crps_est = round(crps_sum / crps_count, 4) if crps_count > 0 else None
+            crps_pct = None
+            if crps_est is not None and len(mean_path) > 0:
+                ref = float(mean_path[0])
+                if ref > 0:
+                    crps_pct = round(crps_est / ref * 100, 4)
+            cal_pct = round(in_band_hit / in_band_count * 100, 1) if in_band_count > 0 else None
+            sprd_pct = round(spread_sum / spread_count, 3) if spread_count > 0 else None
+
+            mae_pct = None
+            if close_series is not None and end_time_str:
+                try:
+                    end_dt = datetime.fromisoformat(end_time_str.replace("Z", "+00:00"))
+                    if end_dt.tzinfo is None:
+                        end_dt = end_dt.replace(tzinfo=timezone.utc)
+                    if end_dt < now - timedelta(minutes=5):
+                        eidx = close_series.index.searchsorted(end_dt)
+                        if eidx >= len(close_series):
+                            eidx = len(close_series) - 1
+                        ae = float(close_series.iloc[eidx])
+                        pe = float(mean_path[-1])
+                        if ae > 0:
+                            mae_pct = round(abs(pe - ae) / ae * 100, 3)
+                except Exception:
+                    pass
+
+            window_complete = False
+            try:
+                if end_time_str:
+                    ed = datetime.fromisoformat(end_time_str.replace("Z", "+00:00"))
+                    if ed.tzinfo is None:
+                        ed = ed.replace(tzinfo=timezone.utc)
+                    window_complete = ed < now - timedelta(minutes=10)
+            except Exception:
+                pass
+
+            predictions.append({
+                "start_time": start_time_str,
+                "end_time": end_time_str,
+                "predicted": pred_series,
+                "p10": p10_series,
+                "p90": p90_series,
+                "crps_estimate": crps_est,
+                "crps_pct": crps_pct,
+                "calibration_pct": cal_pct,
+                "spread_pct": sprd_pct,
+                "mae_pct": mae_pct,
+                "window_complete": window_complete,
+                "scored_steps": crps_count,
+                "logged_at": rec.get("logged_at"),
+            })
+
+        if predictions or actual_48h:
+            result[asset] = {
+                "predictions": predictions,
+                "actual_48h": actual_48h,
+            }
 
     _chart_cache = result
     _chart_cache_ts = now
