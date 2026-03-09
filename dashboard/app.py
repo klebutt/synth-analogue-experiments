@@ -718,11 +718,19 @@ def _get_or_compute_stats(all_records: list) -> dict:
     scored = _batch_score(stats_sample, now)
 
     # Calibration + MAE for all assets (yfinance only — not validator-comparable for XAU/equities)
+    # For BTC/ETH/SOL use the same numbers as per_asset so the two blocks never conflict.
     all_assets_set = set(ASSET_TICKERS.keys())
-    sample_all = completed_scoring_all_assets[-200:]
-    scored_all = _batch_score_calibration_only(sample_all, now, all_assets_set)
     per_asset_yfinance = {}
-    for asset in all_assets_set:
+    for a in SCORING_ASSETS:
+        if a in per_asset and per_asset[a].get("count", 0) > 0:
+            per_asset_yfinance[a] = {
+                "count": per_asset[a]["count"],
+                "calibration_pct": per_asset[a].get("calibration_pct"),
+                "avg_mae_pct": per_asset[a].get("avg_mae_pct"),
+            }
+    sample_all = completed_scoring_all_assets[-200:]
+    scored_all = _batch_score_calibration_only(sample_all, now, all_assets_set - SCORING_ASSETS)
+    for asset in all_assets_set - SCORING_ASSETS:
         a_recs = [r for r in scored_all if r["asset"] == asset]
         if not a_recs:
             continue
