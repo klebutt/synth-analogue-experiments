@@ -190,6 +190,17 @@ def count_recent_requests(hours=24):
 # Scoring helpers
 # ---------------------------------------------------------------------------
 
+def _sanitize(obj):
+    """Recursively replace float NaN/Inf with None so JSON serialization never breaks."""
+    if isinstance(obj, float):
+        return None if (math.isnan(obj) or math.isinf(obj)) else obj
+    if isinstance(obj, dict):
+        return {k: _sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize(v) for v in obj]
+    return obj
+
+
 def compute_mae(mean_path, actual_prices_by_time):
     """
     Given the mean predicted path (list of floats indexed by step) and a dict
@@ -840,7 +851,7 @@ def api_predictions():
     assets_seen = list({r["asset"] for r in enriched_table})
     cached_stats = _get_or_compute_stats(all_records)
 
-    return jsonify({
+    return jsonify(_sanitize({
         "records": enriched_table,
         "stats": {
             "total_logged": total_logged,
@@ -856,7 +867,7 @@ def api_predictions():
             "per_asset_yfinance": cached_stats.get("per_asset_yfinance", {}),
             "assets": assets_seen,
         },
-    })
+    }))
 
 
 @app.route("/api/diagnostics")
@@ -868,7 +879,7 @@ def api_diagnostics():
     all_records = load_prediction_log(MAX_RECORDS_STATS)
     stats = _get_or_compute_stats(all_records)
     diagnosis = _build_diagnosis(stats)
-    return jsonify(diagnosis)
+    return jsonify(_sanitize(diagnosis))
 
 
 @app.route("/api/logs")
@@ -1081,9 +1092,9 @@ def api_charts():
                 "actual_48h": actual_48h,
             }
 
-    _chart_cache = result
+    _chart_cache = _sanitize(result)
     _chart_cache_ts = now
-    return jsonify(result)
+    return jsonify(_chart_cache)
 
 
 @app.route("/api/debug-scoring")
@@ -1186,9 +1197,9 @@ def api_chain():
             "fetched_at": now.isoformat(),
         }
 
-    _chain_cache = result
+    _chain_cache = _sanitize(result)
     _chain_cache_ts = now
-    return jsonify(result)
+    return jsonify(_chain_cache)
 
 
 if __name__ == "__main__":
