@@ -60,17 +60,19 @@ Returns recent predictions with CRPS-aligned accuracy statistics.
   "records": [ ... ],
   "stats": {
     "total_logged": 1234,
-    "avg_mae_pct": 0.143,
-    "direction_accuracy_pct": 86.5,
     "scored_count": 150,
+    "validator_aligned_crps": 38.5,
+    "per_interval_crps": { "5m": 8.2, "30m": 9.1, "3h": 10.3, "24h": 10.9 },
     "estimated_crps": 45.20,
     "estimated_crps_pct": 0.0523,
     "calibration_pct": 72.5,
     "avg_spread_pct": 2.14,
+    "avg_mae_pct": 0.143,
+    "direction_accuracy_pct": 86.5,
     "per_asset": {
-      "BTC": { "count": 50, "avg_crps": 42.10, "avg_mae_pct": 0.12, "calibration_pct": 75.0 },
-      "ETH": { "count": 50, "avg_crps": 3.20, "avg_mae_pct": 0.15, "calibration_pct": 70.0 },
-      "SOL": { "count": 50, "avg_crps": 0.45, "avg_mae_pct": 0.18, "calibration_pct": 72.0 }
+      "BTC": { "count": 50, "avg_crps": 42.10, "avg_validator_aligned_crps": 40.1, "avg_mae_pct": 0.12, "calibration_pct": 75.0 },
+      "ETH": { "count": 50, "avg_crps": 3.20, "avg_validator_aligned_crps": 36.2, "avg_mae_pct": 0.15, "calibration_pct": 70.0 },
+      "SOL": { "count": 50, "avg_crps": 0.45, "avg_validator_aligned_crps": 39.0, "avg_mae_pct": 0.18, "calibration_pct": 72.0 }
     },
     "assets": ["BTC", "ETH", "SOL", "XAU", "SPYX"]
   }
@@ -78,10 +80,12 @@ Returns recent predictions with CRPS-aligned accuracy statistics.
 ```
 
 **Key metrics explained:**
-- `estimated_crps` — Gaussian CRPS approximation at the endpoint (dollar terms). Uses `sigma = (p90 - p10) / 2.56` to estimate the distribution width, then computes `CRPS = sigma * [z*(2*Phi(z)-1) + 2*phi(z) - 1/sqrt(pi)]`.
-- `estimated_crps_pct` — CRPS as a percentage of the starting price, for cross-asset comparison.
-- `calibration_pct` — Percentage of actual endpoint prices falling within the p10-p90 band. Target is ~80%.
-- `avg_spread_pct` — Average `(p90 - p10) / mean * 100` at the endpoint.
+- `validator_aligned_crps` — **Primary.** Same definition as subnet: CRPS on price change in basis points over 5m, 30m, 3h, 24h; sum of the four interval CRPS values; averaged over scored records. Lower = better. Approximated from mean/p10/p90 paths and yfinance actuals (see [SCORING_AND_METRICS.md](SCORING_AND_METRICS.md)).
+- `per_interval_crps` — `{"5m": …, "30m": …, "3h": …, "24h": …}` average CRPS per interval. Use to see which horizon (short vs long) hurts most.
+- `per_asset[].avg_validator_aligned_crps` — Validator-aligned CRPS per asset when available.
+- `estimated_crps` / `estimated_crps_pct` — Legacy Gaussian CRPS on raw prices at the endpoint (secondary).
+- `calibration_pct` — Percentage of actuals in p10–p90 band. Target ~80%.
+- `avg_spread_pct` — Average (p90 − p10) / mean at the endpoint.
 
 ---
 
@@ -159,6 +163,43 @@ Returns on-chain metagraph metrics for UID 255 on subnet 50.
 
 ---
 
+### `GET /api/diagnostics`
+Returns an actionable diagnosis for model improvement: calibration status, worst-performing asset, suggested focus, and a list of recommended actions. Uses the same stats as `/api/predictions` (cached).
+
+**Response:**
+```json
+{
+  "calibration_ok": false,
+  "worst_asset": "BTC",
+  "worst_interval": "24h",
+  "suggested_focus": "widen_bands",
+  "actions": [
+    "Calibration 62.0% is below target (~80%). Actuals often outside p10–p90 band — model is overconfident.",
+    "Widen uncertainty: increase volatility (e.g. FALLBACK_SIGMA in synth_integration.py) or scale up spread.",
+    "Focus on improving 24h horizon (highest CRPS in per-interval breakdown).",
+    "Worst calibration for BTC (58%). Consider asset-specific sigma."
+  ],
+  "summary": "Calibration low (widen bands)",
+  "stats_snapshot": {
+    "scored_count": 150,
+    "validator_aligned_crps": 38.5,
+    "per_interval_crps": { "5m": 8.2, "30m": 9.1, "3h": 10.3, "24h": 10.9 },
+    "calibration_pct": 62.0,
+    "estimated_crps": 45.2,
+    "avg_spread_pct": 2.14,
+    "per_asset": { "BTC": { "avg_crps": 50.1, "avg_validator_aligned_crps": 40.1, "calibration_pct": 58, "count": 50 }, ... }
+  }
+}
+```
+
+**Fields:**
+- `worst_interval` — Which of 5m / 30m / 3h / 24h has the highest CRPS in `per_interval_crps`; used to suggest horizon-specific tuning.
+- Diagnostics use **validator-aligned CRPS** (and per-interval breakdown) when available; actions may include "Focus on improving {worst_interval} horizon".
+
+**`suggested_focus` values:** `widen_bands` (overconfident), `tighten_bands` (underconfident), `per_asset_tuning` (one asset much worse), `check_volatility`, `insufficient_data`.
+
+---
+
 ### `GET /api/debug-scoring` *(temporary)*
 Returns the last 30 scored records with raw MAE values for diagnosis.
 
@@ -180,16 +221,22 @@ Returns the last 30 scored records with raw MAE values for diagnosis.
 
 ---
 
-## CRPS Estimation Method
+## CRPS estimation and validator alignment
 
-Validators score miners using CRPS (Continuous Ranked Probability Score) over the full 1000 simulation paths. The dashboard only has access to the mean, p10, and p90 paths (logged to keep file sizes manageable).
+Validators score **CRPS on price change in basis points** over **four intervals** (5m, 30m, 3h, 24h) and sum them (see [SCORING_AND_METRICS.md](SCORING_AND_METRICS.md)). The dashboard computes the **same quantity** (validator-aligned CRPS) as the primary metric.
 
-The dashboard approximates CRPS by:
-1. At each time step, fitting a Gaussian distribution: `mu = mean_path[i]`, `sigma = (p90_path[i] - p10_path[i]) / 2.56`
-2. Computing closed-form Gaussian CRPS: `sigma * [z*(2*Phi(z)-1) + 2*phi(z) - 1/sqrt(pi)]` where `z = (actual - mu) / sigma`
-3. Averaging across all scored time steps
+**Validator-aligned CRPS (dashboard):**
+1. For each scored record, get actual prices at t₀, t+5m, t+30m, t+3h, t+24h from yfinance.
+2. Compute actual bp changes: `(P_k - P_0) / P_0 * 10000` for each interval.
+3. From mean/p10/p90 paths, approximate mean and sigma of *bp change* per interval; use Gaussian CRPS in bp space: same formula as below with `z = (actual_bp - mean_bp) / sigma_bp`.
+4. Sum the four interval CRPS values → one validator-aligned CRPS per record; average over records and expose `validator_aligned_crps` and `per_interval_crps`.
 
-This is an **approximation** — the actual distribution may not be Gaussian, and the p10/p90 quantiles may not perfectly map to 1.28 standard deviations. But it's a useful proxy for tracking relative model performance.
+**Legacy (raw-price) CRPS** (still in stats as `estimated_crps`):
+1. At each time step, fit a Gaussian: `mu = mean_path[i]`, `sigma = (p90_path[i] - p10_path[i]) / 2.56`
+2. Closed-form Gaussian CRPS: `sigma * [z*(2*Phi(z)-1) + 2*phi(z) - 1/sqrt(pi)]` where `z = (actual - mu) / sigma`
+3. Average across scored time steps
+
+Both are **approximations** (we only have mean/p10/p90, not the full 1000 paths). Validator-aligned CRPS is the one that matches subnet scoring.
 
 ---
 
@@ -232,9 +279,11 @@ The frontend is a single HTML file (`dashboard/templates/index.html`) using:
 
 1. **Status Bar** — miner status, requests, memory, restarts (from `/api/status`)
 2. **On-Chain Metrics** — incentive, emission, validator trust, etc. (from `/api/chain`)
-3. **Model Performance** — Est. CRPS, CRPS %, calibration, spread, MAE, scored count, per-asset breakdown (from `/api/predictions`)
-4. **CRPS Trend** — time-series chart of CRPS % per asset over last 48h (from `/api/charts`)
-5. **Price Charts** — 3-column grid, each chart shows 48h actual price + up to 3 overlaid predictions with p10-p90 bands, color-coded by CRPS quality (from `/api/charts`)
-6. **Prediction Diagnostics** — per-prediction table: CRPS, calibration, spread, MAE, scored steps, status (from `/api/charts`)
-7. **Recent Predictions** — raw prediction records table (from `/api/predictions`)
-8. **Live Miner Log** — PM2 stdout log (from `/api/logs`)
+3. **How validators score** — Short panel: CRPS on bp over 5m/30m/3h/24h; prompt score = sum; caveat (yfinance vs Pyth; BTC/ETH/SOL comparable).
+4. **Model Performance** — Validator CRPS (primary), calibration, spread, MAE, scored count; per-interval CRPS row (5m, 30m, 3h, 24h); per-asset breakdown (from `/api/predictions`)
+5. **Model diagnosis** — summary, suggested focus, worst_interval (if set), and actionable bullets (from `/api/diagnostics`)
+6. **CRPS Trend** — time-series chart of CRPS per asset over last 48h (from `/api/charts`)
+7. **Price Charts** — 3-column grid, each chart shows 48h actual price + up to 3 overlaid predictions with p10-p90 bands (from `/api/charts`)
+8. **Prediction Diagnostics** — per-prediction table: CRPS, calibration, spread, MAE, scored steps, status (from `/api/charts`)
+9. **Recent Predictions** — raw prediction records table (from `/api/predictions`)
+10. **Live Miner Log** — PM2 stdout log (from `/api/logs`)

@@ -237,6 +237,60 @@
     .log-info { color: #7ee787; }
 
     .empty { text-align: center; color: var(--muted); padding: 32px; font-size: 13px; }
+
+    .diagnosis-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 20px;
+    }
+    .diagnosis-loading { color: var(--muted); font-size: 13px; }
+    .diagnosis-summary { font-size: 15px; font-weight: 600; margin-bottom: 10px; }
+    .diagnosis-focus {
+      display: inline-block;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      margin-bottom: 12px;
+      background: var(--border);
+      color: var(--muted);
+    }
+    .diagnosis-focus.widen_bands { background: #d2992222; color: var(--yellow); }
+    .diagnosis-focus.tighten_bands { background: #58a6ff22; color: var(--blue); }
+    .diagnosis-focus.per_asset_tuning { background: #bc8cff22; color: var(--purple); }
+    .diagnosis-focus.check_volatility { background: #3fb95022; color: var(--green); }
+    .diagnosis-actions { list-style: none; }
+    .diagnosis-actions li {
+      font-size: 13px;
+      color: var(--text);
+      padding: 6px 0;
+      padding-left: 18px;
+      position: relative;
+      line-height: 1.45;
+    }
+    .diagnosis-actions li::before {
+      content: '\u2022';
+      position: absolute;
+      left: 0;
+      color: var(--yellow);
+    }
+    .methodology-panel { margin-bottom: 16px; }
+    .methodology-desc { font-size: 13px; color: var(--text); margin-bottom: 6px; line-height: 1.5; }
+    .methodology-caveat { font-size: 12px; color: var(--muted); }
+    .per-interval-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .per-interval-label { font-weight: 600; }
+    .per-interval-vals span { margin-right: 12px; }
+    .per-interval-vals .iv { color: var(--text); }
   </style>
 </head>
 <body>
@@ -273,14 +327,21 @@
     </div>
   </div>
 
+  <!-- How validators score -->
+  <div class="section methodology-panel">
+    <div class="section-header">How validators score</div>
+    <p class="methodology-desc">Validators use CRPS on <strong>price change in basis points</strong> over four intervals: <strong>5m, 30m, 3h, 24h</strong>. Prompt score = sum of CRPS over these intervals. Dashboard uses the same definition (approximated from mean/p10/p90). Lower = better.</p>
+    <p class="methodology-caveat">Actuals from Yahoo Finance; validators use Pyth. BTC/ETH/SOL are comparable; XAU and tokenised equities may differ.</p>
+  </div>
+
   <!-- Model performance -->
   <div class="section">
     <div class="section-header">Model Performance (completed windows · BTC/ETH/SOL)</div>
     <div class="perf-row">
       <div class="perf-card primary">
-        <div class="label">Est. CRPS</div>
-        <div class="value" id="a-crps">–</div>
-        <div class="desc">Lower is better — validators use CRPS for scoring</div>
+        <div class="label">Validator CRPS</div>
+        <div class="value" id="a-validator-crps">–</div>
+        <div class="desc">Same definition as subnet (bp, 5m/30m/3h/24h). Lower is better.</div>
       </div>
       <div class="perf-card primary">
         <div class="label">Calibration</div>
@@ -303,7 +364,19 @@
         <div class="desc">Completed windows evaluated</div>
       </div>
     </div>
+    <div class="per-interval-row" id="per-interval-row">
+      <span class="per-interval-label">CRPS by interval:</span>
+      <span id="per-interval-vals"></span>
+    </div>
     <div id="per-asset-breakdown"></div>
+  </div>
+
+  <!-- Model diagnosis -->
+  <div class="section">
+    <div class="section-header">Model diagnosis</div>
+    <div id="diagnosis-panel" class="diagnosis-panel">
+      <div class="diagnosis-loading">Loading diagnosis…</div>
+    </div>
   </div>
 
   <!-- CRPS trend chart -->
@@ -441,11 +514,13 @@
   // ── Model performance rendering ──────────────────────────────────────────
 
   function renderPerformance(stats) {
-    const crpsEl = document.getElementById('a-crps');
-    if (stats.estimated_crps != null) {
-      crpsEl.textContent = stats.estimated_crps.toFixed(2);
-    } else {
-      crpsEl.textContent = 'Pending';
+    const crpsEl = document.getElementById('a-validator-crps');
+    if (crpsEl) {
+      if (stats.validator_aligned_crps != null) {
+        crpsEl.textContent = stats.validator_aligned_crps.toFixed(2);
+      } else {
+        crpsEl.textContent = 'Pending';
+      }
     }
 
     const calibEl = document.getElementById('a-calib');
@@ -463,6 +538,17 @@
     document.getElementById('a-mae').textContent = stats.avg_mae_pct != null ? stats.avg_mae_pct.toFixed(3) + '%' : 'Pending';
     document.getElementById('a-scored').textContent = stats.scored_count ?? 0;
 
+    const perIntervalEl = document.getElementById('per-interval-vals');
+    if (perIntervalEl && stats.per_interval_crps) {
+      const parts = ['5m', '30m', '3h', '24h'].map(k => {
+        const v = stats.per_interval_crps[k];
+        return v != null ? `<span class="iv">${k}: ${v.toFixed(2)}</span>` : '';
+      }).filter(Boolean);
+      perIntervalEl.innerHTML = parts.length ? parts.join('') : '–';
+    } else if (perIntervalEl) {
+      perIntervalEl.textContent = '–';
+    }
+
     renderPerAsset(stats.per_asset || {});
   }
 
@@ -478,9 +564,10 @@
     if (assets.length === 0) { el.innerHTML = ''; return; }
     el.innerHTML = `<div class="per-asset-row">${assets.map(([asset, v]) => {
       const color = ASSET_COLORS[asset] || '#8b949e';
+      const crpsVal = v.avg_validator_aligned_crps != null ? v.avg_validator_aligned_crps : v.avg_crps;
       return `<div class="per-asset-card" style="border-left:3px solid ${color}">
         <div class="pa-asset">${asset}</div>
-        <div class="pa-stat">CRPS: <strong>${v.avg_crps != null ? v.avg_crps.toFixed(2) : '–'}</strong></div>
+        <div class="pa-stat">CRPS: <strong>${crpsVal != null ? crpsVal.toFixed(2) : '–'}</strong></div>
         <div class="pa-stat">MAE: <strong>${v.avg_mae_pct != null ? v.avg_mae_pct.toFixed(3) + '%' : '–'}</strong></div>
         <div class="pa-stat">Cal: <strong>${v.calibration_pct != null ? v.calibration_pct.toFixed(0) + '%' : '–'}</strong></div>
         <div class="pa-stat">n=${v.count}</div>
@@ -601,10 +688,39 @@
     }
   }
 
+  // ── Model diagnosis ─────────────────────────────────────────────────────
+
+  async function refreshDiagnosis() {
+    const panel = document.getElementById('diagnosis-panel');
+    if (!panel) return;
+    try {
+      const r = await fetch('/api/diagnostics');
+      const d = await r.json();
+      const focus = d.suggested_focus || 'insufficient_data';
+      const focusLabel = {
+        widen_bands: 'Widen bands',
+        tighten_bands: 'Tighten bands',
+        per_asset_tuning: 'Per-asset tuning',
+        check_volatility: 'Check volatility',
+        insufficient_data: 'Insufficient data',
+      }[focus] || focus;
+      panel.innerHTML = `
+        <div class="diagnosis-summary">${escHtml(d.summary || '–')}</div>
+        <span class="diagnosis-focus ${focus}">${escHtml(focusLabel)}</span>
+        <ul class="diagnosis-actions">
+          ${(d.actions || []).map(a => `<li>${escHtml(a)}</li>`).join('')}
+        </ul>`;
+    } catch (e) {
+      panel.innerHTML = `<div class="diagnosis-loading">Diagnosis error: ${escHtml(e.message)}</div>`;
+    }
+  }
+
   refresh();
   setInterval(refresh, 60000);
   refreshChain();
   setInterval(refreshChain, 10 * 60 * 1000);
+  refreshDiagnosis();
+  setInterval(refreshDiagnosis, 60000);
 </script>
 
 <!-- Chart.js + date-fns adapter -->

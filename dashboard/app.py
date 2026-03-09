@@ -213,6 +213,82 @@ def _gaussian_crps(mu, sigma, actual):
     return sigma * (z * (2 * big_phi_z - 1) + 2 * phi_z - 1 / math.sqrt(math.pi))
 
 
+# Validator methodology: CRPS on price change in basis points over 5m, 30m, 3h, 24h.
+# Step indices for 5-min increment (steps 0, 1, 6, 36, 288 = t0, 5m, 30m, 3h, 24h).
+VALIDATOR_INTERVAL_STEPS = (1, 6, 36, 288)
+VALIDATOR_INTERVAL_NAMES = ("5m", "30m", "3h", "24h")
+
+
+def _crps_bp_interval(mean_bp: float, sigma_bp: float, actual_bp: float) -> float:
+    """Gaussian CRPS in basis-point space (same formula as _gaussian_crps)."""
+    return _gaussian_crps(mean_bp, sigma_bp, actual_bp)
+
+
+def _validator_aligned_crps_for_record(rec, close_series, start_dt, time_increment) -> tuple:
+    """
+    Compute validator-style CRPS for one record: CRPS on bp changes over 5m, 30m, 3h, 24h; sum.
+    Returns (validator_aligned_crps, per_interval_crps_dict) or (None, None) if cannot compute.
+    """
+    mean_path = rec.get("mean_path", [])
+    p10_path = rec.get("p10_path", [])
+    p90_path = rec.get("p90_path", [])
+    n = len(mean_path)
+    if n <= VALIDATOR_INTERVAL_STEPS[-1]:
+        return None, None
+    if not (p10_path and p90_path and len(p10_path) == n and len(p90_path) == n):
+        return None, None
+
+    # Actual prices at t0, t+5m, t+30m, t+3h, t+24h
+    timestamps = [
+        start_dt,
+        start_dt + timedelta(seconds=time_increment * 1),
+        start_dt + timedelta(seconds=time_increment * 6),
+        start_dt + timedelta(seconds=time_increment * 36),
+        start_dt + timedelta(seconds=time_increment * 288),
+    ]
+    actual_prices = []
+    for ts in timestamps:
+        idx = close_series.index.searchsorted(ts)
+        if idx >= len(close_series):
+            idx = len(close_series) - 1
+        if idx < 0:
+            return None, None
+        actual_prices.append(float(close_series.iloc[idx]))
+    if actual_prices[0] <= 0:
+        return None, None
+
+    # Actual bp changes
+    actual_bps = [
+        (actual_prices[i] - actual_prices[0]) / actual_prices[0] * 10000
+        for i in range(1, 5)
+    ]
+
+    total_crps = 0.0
+    per_interval = {}
+    for i, (step_k, name) in enumerate(zip(VALIDATOR_INTERVAL_STEPS, VALIDATOR_INTERVAL_NAMES)):
+        p0 = float(mean_path[0])
+        pk = float(mean_path[step_k])
+        if p0 <= 0:
+            continue
+        mean_bp = (pk - p0) / p0 * 10000
+        # Spread of bp change from p10/p90 paths
+        p10_0 = float(p10_path[0])
+        p10_k = float(p10_path[step_k])
+        p90_0 = float(p90_path[0])
+        p90_k = float(p90_path[step_k])
+        if p10_0 <= 0 or p90_0 <= 0:
+            continue
+        p10_bp = (p10_k - p10_0) / p10_0 * 10000
+        p90_bp = (p90_k - p90_0) / p90_0 * 10000
+        sigma_bp = (p90_bp - p10_bp) / 2.56
+        if sigma_bp <= 0:
+            sigma_bp = abs(mean_bp) * 0.01 + 1e-6
+        crps_k = _crps_bp_interval(mean_bp, sigma_bp, actual_bps[i])
+        total_crps += crps_k
+        per_interval[name] = round(crps_k, 4)
+    return round(total_crps, 4), per_interval
+
+
 def enrich_records(records):
     """
     For each log record that has a completed forecast window, try to fetch
@@ -286,20 +362,25 @@ def _batch_score(records, now):
             continue
 
         end_times = []
+        start_times = []
         for rec in recs:
             try:
                 et = datetime.fromisoformat(rec["end_time"].replace("Z", "+00:00"))
                 if et.tzinfo is None:
                     et = et.replace(tzinfo=timezone.utc)
                 end_times.append(et)
+                st = datetime.fromisoformat(rec.get("start_time", "").replace("Z", "+00:00"))
+                if st.tzinfo is None:
+                    st = st.replace(tzinfo=timezone.utc)
+                start_times.append(st)
             except Exception:
                 pass
         if not end_times:
             continue
 
-        window_start = min(end_times) - timedelta(minutes=15)
+        window_start = min(min(end_times), min(start_times)) - timedelta(minutes=15)
         window_end = max(end_times) + timedelta(minutes=15)
-        window_start = max(window_start, now - timedelta(hours=48))
+        window_start = max(window_start, now - timedelta(hours=50))
 
         try:
             df = yf.download(
@@ -357,6 +438,22 @@ def _batch_score(records, now):
                     if pred_end > 0:
                         spread_pct = round((p90_end - p10_end) / pred_end * 100, 3)
 
+                validator_aligned_crps = None
+                per_interval_crps = None
+                try:
+                    start_iso = rec.get("start_time", "")
+                    time_inc = rec.get("time_increment", 300)
+                    start_dt = datetime.fromisoformat(start_iso.replace("Z", "+00:00"))
+                    if start_dt.tzinfo is None:
+                        start_dt = start_dt.replace(tzinfo=timezone.utc)
+                    val_crps, per_int = _validator_aligned_crps_for_record(
+                        rec, close, start_dt, time_inc
+                    )
+                    validator_aligned_crps = val_crps
+                    per_interval_crps = per_int
+                except Exception:
+                    pass
+
                 results.append({
                     "asset": asset,
                     "mae_pct": mae_pct,
@@ -364,11 +461,230 @@ def _batch_score(records, now):
                     "crps_endpoint": crps_endpoint,
                     "in_band": in_band,
                     "spread_pct": spread_pct,
+                    "validator_aligned_crps": validator_aligned_crps,
+                    "per_interval_crps": per_interval_crps,
                 })
             except Exception:
                 pass
 
     return results
+
+
+def _build_diagnosis(stats: dict) -> dict:
+    """
+    Build actionable diagnosis from stats. Uses validator-aligned CRPS when available.
+    Returns calibration_ok, worst_asset, worst_interval, suggested_focus, and actions list.
+    """
+    calibration_pct = stats.get("calibration_pct")
+    avg_crps = stats.get("estimated_crps")
+    avg_validator_crps = stats.get("validator_aligned_crps")
+    per_interval_crps = stats.get("per_interval_crps") or {}
+    avg_spread_pct = stats.get("avg_spread_pct")
+    per_asset = stats.get("per_asset") or {}
+    scored_count = stats.get("scored_count") or 0
+
+    calibration_ok = None
+    if calibration_pct is not None:
+        calibration_ok = 65 <= calibration_pct <= 95
+
+    worst_asset = None
+    worst_crps = None
+    crps_key = "avg_validator_aligned_crps" if any(pa.get("avg_validator_aligned_crps") is not None for pa in per_asset.values()) else "avg_crps"
+    for asset, pa in per_asset.items():
+        val = pa.get(crps_key) if crps_key == "avg_validator_aligned_crps" else pa.get("avg_crps")
+        if val is not None and pa.get("count", 0) > 0:
+            if worst_crps is None or val > worst_crps:
+                worst_crps = val
+                worst_asset = asset
+
+    worst_interval = None
+    if per_interval_crps:
+        valid = {k: v for k, v in per_interval_crps.items() if v is not None}
+        if valid:
+            worst_interval = max(valid, key=valid.get)
+
+    suggested_focus = "insufficient_data"
+    actions = []
+
+    if scored_count == 0:
+        actions.append("No completed prediction windows yet. Wait for validator requests and for windows to close.")
+        return {
+            "calibration_ok": None,
+            "worst_asset": None,
+            "worst_interval": None,
+            "suggested_focus": suggested_focus,
+            "actions": actions,
+            "summary": "Insufficient data",
+            "stats_snapshot": {},
+        }
+
+    if calibration_pct is not None and calibration_pct < 65:
+        suggested_focus = "widen_bands"
+        actions.append(
+            f"Calibration {calibration_pct:.1f}% is below target (~80%). Actuals often outside p10–p90 band — model is overconfident."
+        )
+        actions.append(
+            "Widen uncertainty: increase volatility (e.g. FALLBACK_SIGMA in synth_integration.py) or scale up spread."
+        )
+        if worst_asset:
+            pa = per_asset.get(worst_asset, {})
+            if pa.get("calibration_pct") is not None and pa["calibration_pct"] < 65:
+                actions.append(f"Worst calibration for {worst_asset} ({pa['calibration_pct']:.0f}%). Consider asset-specific sigma.")
+    elif calibration_pct is not None and calibration_pct > 95:
+        suggested_focus = "tighten_bands"
+        actions.append(
+            f"Calibration {calibration_pct:.1f}% is above target (~80%). Bands are very wide — model is underconfident."
+        )
+        actions.append(
+            "Tighten uncertainty: reduce volatility or scale down spread so p10–p90 is narrower."
+        )
+    elif worst_asset and len(per_asset) > 1:
+        crps_list = [per_asset[a].get(crps_key) or per_asset[a].get("avg_crps") for a in per_asset]
+        crps_list = [c for c in crps_list if c is not None]
+        if crps_list:
+            crps_max = max(crps_list)
+            crps_min = min(crps_list)
+            if crps_min > 0 and crps_max > 1.5 * crps_min:
+                suggested_focus = "per_asset_tuning"
+                actions.append(
+                    f"{worst_asset} has highest validator-aligned CRPS ({worst_crps:.2f}). Tune volatility or model for {worst_asset}."
+                )
+                actions.append(
+                    "Edit FALLBACK_SIGMA in synth_integration.py or volatility_calculator for that asset."
+                )
+
+    if worst_interval:
+        actions.append(f"Focus on improving {worst_interval} horizon (highest CRPS in per-interval breakdown).")
+
+    if suggested_focus == "insufficient_data" and (avg_validator_crps is not None or avg_crps is not None or calibration_ok is not None):
+        suggested_focus = "check_volatility"
+        if calibration_ok:
+            actions.append("Calibration is in range. If on-chain CRPS is still poor, check volatility (sigma) and ensemble weights in synth_integration.py.")
+        crps_display = avg_validator_crps if avg_validator_crps is not None else avg_crps
+        if crps_display is not None:
+            actions.append(f"Validator-aligned CRPS (dashboard) is {crps_display:.2f}. Same definition as subnet (bp changes, 5m/30m/3h/24h). Compare with ranking.")
+
+    if not actions:
+        actions.append("Keep monitoring. Calibration and per-asset CRPS look acceptable; refine if on-chain rewards don't improve.")
+
+    summary = (
+        "Calibration OK" if calibration_ok else
+        "Calibration low (widen bands)" if calibration_pct is not None and calibration_pct < 65 else
+        "Calibration high (tighten bands)" if calibration_pct is not None and calibration_pct > 95 else
+        "Per-asset tuning suggested" if suggested_focus == "per_asset_tuning" else
+        "Review volatility and weights"
+    )
+
+    return {
+        "calibration_ok": calibration_ok,
+        "worst_asset": worst_asset,
+        "worst_interval": worst_interval,
+        "suggested_focus": suggested_focus,
+        "actions": actions,
+        "summary": summary,
+        "stats_snapshot": {
+            "scored_count": scored_count,
+            "calibration_pct": calibration_pct,
+            "estimated_crps": avg_crps,
+            "validator_aligned_crps": avg_validator_crps,
+            "per_interval_crps": per_interval_crps,
+            "avg_spread_pct": avg_spread_pct,
+            "per_asset": {a: {"avg_crps": pa.get("avg_crps"), "avg_validator_aligned_crps": pa.get("avg_validator_aligned_crps"), "calibration_pct": pa.get("calibration_pct"), "count": pa.get("count")} for a, pa in per_asset.items()},
+        },
+    }
+
+
+def _get_or_compute_stats(all_records: list) -> dict:
+    """Return cached stats or compute from all_records and update cache."""
+    global _stats_cache, _stats_cache_ts
+    now = datetime.now(timezone.utc)
+    if (
+        _stats_cache
+        and _stats_cache_ts is not None
+        and (now - _stats_cache_ts).total_seconds() < STATS_CACHE_TTL
+    ):
+        return _stats_cache
+
+    completed_scoring = []
+    for rec in all_records:
+        if rec.get("asset") not in SCORING_ASSETS:
+            continue
+        end_iso = rec.get("end_time", "")
+        try:
+            end_dt = datetime.fromisoformat(end_iso.replace("Z", "+00:00"))
+            if end_dt.tzinfo is None:
+                end_dt = end_dt.replace(tzinfo=timezone.utc)
+            if end_dt < now - timedelta(minutes=10):
+                completed_scoring.append(rec)
+        except Exception:
+            pass
+
+    stats_sample = completed_scoring[-200:]
+    scored = _batch_score(stats_sample, now)
+    avg_mae_pct = round(sum(r["mae_pct"] for r in scored) / len(scored), 3) if scored else None
+    dir_correct = [r for r in scored if r.get("direction_correct") is True]
+    dir_accuracy = round(len(dir_correct) / len(scored) * 100, 1) if scored else None
+
+    crps_vals = [r["crps_endpoint"] for r in scored if r.get("crps_endpoint") is not None]
+    avg_crps = round(sum(crps_vals) / len(crps_vals), 2) if crps_vals else None
+
+    val_crps_vals = [r["validator_aligned_crps"] for r in scored if r.get("validator_aligned_crps") is not None]
+    avg_validator_aligned_crps = round(sum(val_crps_vals) / len(val_crps_vals), 2) if val_crps_vals else None
+
+    per_interval_sums = defaultdict(float)
+    per_interval_counts = defaultdict(int)
+    for r in scored:
+        pi = r.get("per_interval_crps")
+        if pi:
+            for k, v in pi.items():
+                per_interval_sums[k] += v
+                per_interval_counts[k] += 1
+    per_interval_crps = {
+        k: round(per_interval_sums[k] / per_interval_counts[k], 2) if per_interval_counts[k] else None
+        for k in VALIDATOR_INTERVAL_NAMES
+    }
+    if not any(per_interval_crps.values()):
+        per_interval_crps = None
+
+    in_band_vals = [r["in_band"] for r in scored if r.get("in_band") is not None]
+    calibration_pct = round(
+        sum(1 for v in in_band_vals if v) / len(in_band_vals) * 100, 1
+    ) if in_band_vals else None
+
+    spread_vals = [r["spread_pct"] for r in scored if r.get("spread_pct") is not None]
+    avg_spread_pct = round(sum(spread_vals) / len(spread_vals), 3) if spread_vals else None
+
+    per_asset = {}
+    for a in SCORING_ASSETS:
+        a_scored = [r for r in scored if r["asset"] == a]
+        a_crps = [r["crps_endpoint"] for r in a_scored if r.get("crps_endpoint") is not None]
+        a_val_crps = [r["validator_aligned_crps"] for r in a_scored if r.get("validator_aligned_crps") is not None]
+        a_mae = [r["mae_pct"] for r in a_scored]
+        a_calib = [r["in_band"] for r in a_scored if r.get("in_band") is not None]
+        per_asset[a] = {
+            "count": len(a_scored),
+            "avg_crps": round(sum(a_crps) / len(a_crps), 2) if a_crps else None,
+            "avg_validator_aligned_crps": round(sum(a_val_crps) / len(a_val_crps), 2) if a_val_crps else None,
+            "avg_mae_pct": round(sum(a_mae) / len(a_mae), 3) if a_mae else None,
+            "calibration_pct": round(
+                sum(1 for v in a_calib if v) / len(a_calib) * 100, 1
+            ) if a_calib else None,
+        }
+
+    cached_stats = {
+        "avg_mae_pct": avg_mae_pct,
+        "direction_accuracy_pct": dir_accuracy,
+        "scored_count": len(scored),
+        "estimated_crps": avg_crps,
+        "validator_aligned_crps": avg_validator_aligned_crps,
+        "per_interval_crps": per_interval_crps,
+        "calibration_pct": calibration_pct,
+        "avg_spread_pct": avg_spread_pct,
+        "per_asset": per_asset,
+    }
+    _stats_cache = cached_stats
+    _stats_cache_ts = now
+    return cached_stats
 
 
 # ---------------------------------------------------------------------------
@@ -394,86 +710,12 @@ def api_status():
 @app.route("/api/predictions")
 def api_predictions():
     """Return recent prediction records, enriched with actual prices where available."""
-    global _stats_cache, _stats_cache_ts
-
-    now = datetime.now(timezone.utc)
-
-    # Load all records we need
     all_records = load_prediction_log(MAX_RECORDS_STATS)
     total_logged = len(load_prediction_log(limit=99999))
-
-    # Table: 50 most-recent records (reversed so newest first)
     table_records = list(reversed(all_records))[:50]
     enriched_table = enrich_records(table_records)
     assets_seen = list({r["asset"] for r in enriched_table})
-
-    # Stats: use cache if fresh enough (yfinance calls are slow and rate-limited)
-    if (
-        _stats_cache
-        and _stats_cache_ts is not None
-        and (now - _stats_cache_ts).total_seconds() < STATS_CACHE_TTL
-    ):
-        cached_stats = _stats_cache
-    else:
-        # Only score assets where yfinance prices match the subnet oracle
-        completed_scoring = []
-        for rec in all_records:
-            if rec.get("asset") not in SCORING_ASSETS:
-                continue
-            end_iso = rec.get("end_time", "")
-            try:
-                end_dt = datetime.fromisoformat(end_iso.replace("Z", "+00:00"))
-                if end_dt.tzinfo is None:
-                    end_dt = end_dt.replace(tzinfo=timezone.utc)
-                if end_dt < now - timedelta(minutes=10):
-                    completed_scoring.append(rec)
-            except Exception:
-                pass
-
-        # Cap at 200 records, then batch-fetch prices per asset (avoids yfinance rate limits)
-        stats_sample = completed_scoring[-200:]
-        scored = _batch_score(stats_sample, now)
-        avg_mae_pct = round(sum(r["mae_pct"] for r in scored) / len(scored), 3) if scored else None
-        dir_correct = [r for r in scored if r.get("direction_correct") is True]
-        dir_accuracy = round(len(dir_correct) / len(scored) * 100, 1) if scored else None
-
-        crps_vals = [r["crps_endpoint"] for r in scored if r.get("crps_endpoint") is not None]
-        avg_crps = round(sum(crps_vals) / len(crps_vals), 2) if crps_vals else None
-
-        in_band_vals = [r["in_band"] for r in scored if r.get("in_band") is not None]
-        calibration_pct = round(
-            sum(1 for v in in_band_vals if v) / len(in_band_vals) * 100, 1
-        ) if in_band_vals else None
-
-        spread_vals = [r["spread_pct"] for r in scored if r.get("spread_pct") is not None]
-        avg_spread_pct = round(sum(spread_vals) / len(spread_vals), 3) if spread_vals else None
-
-        per_asset = {}
-        for a in SCORING_ASSETS:
-            a_scored = [r for r in scored if r["asset"] == a]
-            a_crps = [r["crps_endpoint"] for r in a_scored if r.get("crps_endpoint") is not None]
-            a_mae = [r["mae_pct"] for r in a_scored]
-            a_calib = [r["in_band"] for r in a_scored if r.get("in_band") is not None]
-            per_asset[a] = {
-                "count": len(a_scored),
-                "avg_crps": round(sum(a_crps) / len(a_crps), 2) if a_crps else None,
-                "avg_mae_pct": round(sum(a_mae) / len(a_mae), 3) if a_mae else None,
-                "calibration_pct": round(
-                    sum(1 for v in a_calib if v) / len(a_calib) * 100, 1
-                ) if a_calib else None,
-            }
-
-        cached_stats = {
-            "avg_mae_pct": avg_mae_pct,
-            "direction_accuracy_pct": dir_accuracy,
-            "scored_count": len(scored),
-            "estimated_crps": avg_crps,
-            "calibration_pct": calibration_pct,
-            "avg_spread_pct": avg_spread_pct,
-            "per_asset": per_asset,
-        }
-        _stats_cache = cached_stats
-        _stats_cache_ts = now
+    cached_stats = _get_or_compute_stats(all_records)
 
     return jsonify({
         "records": enriched_table,
@@ -483,12 +725,26 @@ def api_predictions():
             "direction_accuracy_pct": cached_stats["direction_accuracy_pct"],
             "scored_count": cached_stats["scored_count"],
             "estimated_crps": cached_stats.get("estimated_crps"),
+            "validator_aligned_crps": cached_stats.get("validator_aligned_crps"),
+            "per_interval_crps": cached_stats.get("per_interval_crps"),
             "calibration_pct": cached_stats.get("calibration_pct"),
             "avg_spread_pct": cached_stats.get("avg_spread_pct"),
             "per_asset": cached_stats.get("per_asset", {}),
             "assets": assets_seen,
         },
     })
+
+
+@app.route("/api/diagnostics")
+def api_diagnostics():
+    """
+    Return actionable diagnosis: calibration_ok, worst_asset, suggested_focus,
+    and a list of recommended actions. Uses same stats as /api/predictions (cached).
+    """
+    all_records = load_prediction_log(MAX_RECORDS_STATS)
+    stats = _get_or_compute_stats(all_records)
+    diagnosis = _build_diagnosis(stats)
+    return jsonify(diagnosis)
 
 
 @app.route("/api/logs")

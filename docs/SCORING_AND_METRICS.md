@@ -6,24 +6,50 @@ This document explains how validators score miners on Subnet 50 (Synth), how tho
 
 ## How Validators Score Miners
 
+*The following matches the [official Synth subnet validator scoring methodology](https://github.com/mode-network/synth-subnet#13-validators-scoring-methodology).*
+
 ### What validators ask for
-Validators periodically send requests to each miner asking for 1000 simulated price paths for an asset over a fixed time window (e.g., 1 hour, starting from "now"). Each path has one price point per minute (61 points for a 1-hour window).
+Validators send requests for **1000 simulated price paths** per asset at **5-minute increments** over a **24-hour horizon** (and separately for 1-hour HFT prompts). Parameters: `(start_time, asset, time_increment=300, time_horizon=24h, num_simulations=1000)`. Assets include BTC, ETH, SOL, XAU, SPYX, NVDAX, TSLAX, AAPLX, GOOGLX. Each asset contributes to the final miner weights (see asset weights below).
 
-### How predictions are scored
-Validators use **CRPS (Continuous Ranked Probability Score)** to evaluate predictions once the actual price at the end of the window is known.
+### CRPS on price change in basis points
+Validators do **not** score raw prices. They score **price change in basis points (bp)** so that prompt scores have the same units across all assets.
 
-CRPS measures how well your predicted distribution covers the actual outcome:
-- A tighter distribution centred on the actual price → lower CRPS → higher score
-- A wide, spread-out distribution → higher CRPS → lower score
-- A distribution that misses the actual price → very high CRPS → penalised
+- **Basis point change** for an interval: `(P_end - P_start) / P_start * 10000`
+- **Predicted bp change**: from the 1000 paths, validators compute the ensemble of bp changes over each interval
+- **Observed bp change**: from the Pyth oracle at the interval end (validators store prices at each time increment)
+- **CRPS** is calculated on the predicted vs observed bp change (ensemble formula: average |y_n - x| minus half the average pairwise |y_n - y_m|)
 
-CRPS ranges from 0 (perfect) to ∞ (terrible). The subnet normalises scores across all miners and uses them to set reward weights.
+### Four time increments (5m, 30m, 3h, 24h)
+For each checking prompt, CRPS is computed for **four intervals** (with 5-minute steps):
+
+| Interval | Step index | Description |
+|----------|------------|-------------|
+| 5m  | 1  | t₀ → t₀+5m   |
+| 30m | 6  | t₀ → t₀+30m  |
+| 3h  | 36 | t₀ → t₀+3h   |
+| 24h | 288| t₀ → t₀+24h   |
+
+For each interval: predicted bp changes (from 1000 paths), observed bp change (from Pyth), then CRPS for that interval. **Prompt score = sum of the four CRPS values** (one per interval).
+
+### CRPS transformation (best → 0)
+After computing the sum of CRPS per miner per prompt:
+
+1. Order miners by CRPS sum; cap the **worst 10%** of scores to the **90th percentile**
+2. Take the **best (lowest)** CRPS sum for that prompt
+3. **Subtract the best score from all miners** so the best miner gets **0**
+4. Miners who failed to submit or submitted invalidly get the **90th percentile** score
+
+### Rolling average (leaderboard score)
+The validator stores historic **per-request** scores. The **leaderboard score** for each miner is a **rolling average** over the past **10 days** of these transformed scores, **weighted by asset**. Recent performance is emphasised; the sum runs over all requests within the 10-day window. Highest-ranking miners have the **lowest** leaderboard scores.
+
+### Final emissions
+Emission allocation uses a **softmax** over (negative) leaderboard scores: \( A_i = e^{-\beta L_i} / \sum_j e^{-\beta L_j} \cdot E(t) \) with \(\beta = -0.1\). So lower CRPS → lower transformed score → higher emission.
+
+### Asset weights (24h prompts)
+CRPS from each asset contributes to the rolling leaderboard with the following weights (from subnet README): BTC 1.0, ETH ~0.67, XAU ~2.26, SOL ~0.59, SPYX ~2.99, NVDAX ~1.39, TSLAX ~1.42, AAPLX ~1.86, GOOGLX ~1.43.
 
 ### When scores appear
-After a prediction window ends, the validator fetches the actual price and scores all miners that responded to that window. This means:
-- There is always a **delay** between submitting predictions and seeing scores
-- Scores are updated on-chain roughly every 100–200 blocks (~20–40 minutes)
-- After first registration or re-registration, it typically takes **6–24 hours** for incentive/emission to appear
+After a prediction window ends, the validator fetches actual prices from Pyth and scores all miners. Scores are updated on-chain periodically. After first registration, it typically takes **6–24 hours** for incentive/emission to appear.
 
 ---
 
@@ -74,14 +100,19 @@ Common reasons your incentive is 0:
 
 ---
 
-## Dashboard Scoring vs Validator Scoring
+## Dashboard alignment with validator scoring
 
-The dashboard has its own independent accuracy metric for monitoring, which is **separate from validator scoring**:
+The dashboard now computes **the same quantity** validators use, so "Validator CRPS" on the dashboard is directly comparable to what drives on-chain scores.
 
-- **Dashboard MAE** (Mean Absolute Error): compares the **mean predicted end price** against the actual end price from yfinance. Used purely as a local sanity check.
-- **Validator CRPS**: evaluates the entire distribution of 1000 paths, not just the mean. This is what actually determines your TAO rewards.
+### What the dashboard computes
+- **Validator-aligned CRPS**: For each completed prediction (BTC/ETH/SOL only), we compute CRPS on **price change in basis points** for the **four intervals** (5m, 30m, 3h, 24h), then **sum** them — same definition as the subnet.
+- **Approximation**: We only have mean, p10, and p90 paths in the log (not the full 1000 paths). We approximate the bp-change distribution per interval with a Gaussian (mean and sigma derived from mean/p10/p90) and use the closed-form Gaussian CRPS formula. So the dashboard value is an **approximation** of the true validator CRPS for that prompt.
+- **Actuals**: We use **Yahoo Finance** (yfinance) for actual prices at t₀, t+5m, t+30m, t+3h, t+24h. Validators use **Pyth**. For **BTC, ETH, SOL** the two sources are comparable; for **XAU** and tokenised equities (SPYX, NVDAX, etc.) there can be systematic differences, so we **only score BTC, ETH, SOL** on the dashboard (`SCORING_ASSETS` in `dashboard/app.py`).
 
-The dashboard MAE is only computed for **BTC, ETH, SOL** because the oracle used by the subnet for XAU and tokenised equities (SPYX, NVDAX, etc.) does not match Yahoo Finance prices. Using yfinance prices to evaluate those assets would give misleadingly high error figures.
+### Other dashboard metrics
+- **Per-interval CRPS**: Breakdown into CRPS(5m), CRPS(30m), CRPS(3h), CRPS(24h) so you can see which horizon hurts most.
+- **Calibration %**: Share of actuals inside the p10–p90 band (target ~80%); supports tuning band width.
+- **MAE**: Mean absolute error on endpoint price (secondary; not what validators use).
 
 ---
 
