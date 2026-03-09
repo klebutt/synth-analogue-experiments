@@ -43,6 +43,14 @@ FALLBACK_SIGMA = {
     "GOOGLX": 0.00332,
 }
 
+# Per-asset multiplier applied on top of the yfinance sigma.
+# Values < 1.0 tighten bands; values > 1.0 widen them.
+# Tuned from 48h calibration data: ETH 96.4% → target 80%, SOL 88.6% → target 80%.
+VOLATILITY_SCALE = {
+    "ETH": 0.60,
+    "SOL": 0.90,
+}
+
 
 class EnsembleGBMWeightedModel:
     """
@@ -66,8 +74,9 @@ class EnsembleGBMWeightedModel:
             )
         }
         
-        # GBM-weighted ensemble (best performing configuration)
-        self.weights = [0.2, 0.5, 0.3]  # [RW, GBM, MR]
+        # GBM-dominant ensemble — MR removed to prevent band compression at 24h horizon
+        # and eliminate drift-induced directional bias in long predictions.
+        self.weights = [0.3, 0.7, 0.0]  # [RW, GBM, MR=0]
         
     def predict(self,
                 asset: str, 
@@ -95,22 +104,23 @@ class EnsembleGBMWeightedModel:
         if needs_calibration:
             volatilities = get_all_volatilities()
             if asset in volatilities:
-                self.cached_params[asset] = {
-                    'volatility': volatilities[asset]['volatility'],
-                    'drift': volatilities[asset]['drift']
-                }
+                raw_vol = volatilities[asset]['volatility']
             else:
-                self.cached_params[asset] = {
-                    'volatility': FALLBACK_SIGMA.get(asset, 0.005),
-                    'drift': 0.0
-                }
+                raw_vol = FALLBACK_SIGMA.get(asset, 0.005)
+
+            scale = VOLATILITY_SCALE.get(asset, 1.0)
+            scaled_vol = raw_vol * scale
+
+            self.cached_params[asset] = {
+                'volatility': scaled_vol,
+                'drift': 0.0,  # Always neutral — historical mean return is too noisy
+            }
             self.last_calibration[asset] = current_time
 
-            self.models['RandomWalk'].volatility = self.cached_params[asset]['volatility']
-            self.models['GBM'].drift = self.cached_params[asset]['drift']
-            self.models['GBM'].volatility = self.cached_params[asset]['volatility']
-            self.models['MeanReversion'].reversion_strength = 0.1
-            self.models['MeanReversion'].volatility = self.cached_params[asset]['volatility']
+            self.models['RandomWalk'].volatility = scaled_vol
+            self.models['GBM'].drift = 0.0
+            self.models['GBM'].volatility = scaled_vol
+            self.models['MeanReversion'].volatility = scaled_vol
 
         # Update mean reversion model with current price
         self.models['MeanReversion'].mean_price = start_price
