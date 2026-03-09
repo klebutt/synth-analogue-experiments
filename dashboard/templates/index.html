@@ -337,7 +337,7 @@
 
   <!-- Model performance -->
   <div class="section">
-    <div class="section-header">Model Performance (completed windows · BTC/ETH/SOL)</div>
+    <div class="section-header">Model Performance (last 48 h · BTC/ETH/SOL)</div>
     <div class="perf-row">
       <div class="perf-card primary">
         <div class="label">Validator CRPS</div>
@@ -360,9 +360,9 @@
         <div class="desc">Mean endpoint error (secondary)</div>
       </div>
       <div class="perf-card">
-        <div class="label">Scored</div>
+        <div class="label">Scored (48 h)</div>
         <div class="value" id="a-scored">–</div>
-        <div class="desc">Completed windows evaluated</div>
+        <div class="desc">Completed windows in last 48 h</div>
       </div>
     </div>
     <div class="per-interval-row" id="per-interval-row">
@@ -372,8 +372,8 @@
     <div id="per-asset-breakdown"></div>
 
     <div class="section all-assets-yf-section">
-      <div class="section-header">All assets (yfinance only)</div>
-      <p class="methodology-caveat">Calibration and MAE using Yahoo Finance actuals. Not validator-comparable for XAU and tokenised equities — use for internal comparison only.</p>
+      <div class="section-header">Non-crypto assets (yfinance only · last 48 h)</div>
+      <p class="methodology-caveat">Calibration and MAE for XAU and tokenised equities using Yahoo Finance actuals. Not validator-comparable — use for internal model comparison only.</p>
       <div id="per-asset-yfinance"></div>
     </div>
   </div>

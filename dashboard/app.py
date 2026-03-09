@@ -709,6 +709,9 @@ def _get_or_compute_stats(all_records: list) -> dict:
     ):
         return _stats_cache
 
+    # Use a 48-hour rolling window so calibration reflects recent model behaviour,
+    # not historical records from a different market regime or model version.
+    window_48h = now - timedelta(hours=48)
     completed_scoring = []
     completed_scoring_all_assets = []
     for rec in all_records:
@@ -717,7 +720,7 @@ def _get_or_compute_stats(all_records: list) -> dict:
             end_dt = datetime.fromisoformat(end_iso.replace("Z", "+00:00"))
             if end_dt.tzinfo is None:
                 end_dt = end_dt.replace(tzinfo=timezone.utc)
-            if end_dt < now - timedelta(minutes=10):
+            if window_48h <= end_dt < now - timedelta(minutes=10):
                 if rec.get("asset") in SCORING_ASSETS:
                     completed_scoring.append(rec)
                 if rec.get("asset") in ASSET_TICKERS:
@@ -725,7 +728,7 @@ def _get_or_compute_stats(all_records: list) -> dict:
         except Exception:
             pass
 
-    stats_sample = completed_scoring[-200:]
+    stats_sample = completed_scoring[-500:]
     scored = _batch_score(stats_sample, now)
 
     per_asset = {}
@@ -778,19 +781,13 @@ def _get_or_compute_stats(all_records: list) -> dict:
             ) if a_calib else None,
         }
 
-    # Calibration + MAE for all assets (yfinance only). For BTC/ETH/SOL use per_asset so the two blocks match.
-    all_assets_set = set(ASSET_TICKERS.keys())
+    # Calibration + MAE for non-crypto assets only (yfinance, not validator-comparable).
+    # BTC/ETH/SOL are already shown in the validator-aligned block above — no need to repeat.
+    non_crypto = set(ASSET_TICKERS.keys()) - SCORING_ASSETS
     per_asset_yfinance = {}
-    for a in SCORING_ASSETS:
-        if a in per_asset and per_asset[a].get("count", 0) > 0:
-            per_asset_yfinance[a] = {
-                "count": per_asset[a]["count"],
-                "calibration_pct": per_asset[a].get("calibration_pct"),
-                "avg_mae_pct": per_asset[a].get("avg_mae_pct"),
-            }
-    sample_all = completed_scoring_all_assets[-200:]
-    scored_all = _batch_score_calibration_only(sample_all, now, all_assets_set - SCORING_ASSETS)
-    for asset in all_assets_set - SCORING_ASSETS:
+    sample_all = completed_scoring_all_assets[-500:]
+    scored_all = _batch_score_calibration_only(sample_all, now, non_crypto)
+    for asset in non_crypto:
         a_recs = [r for r in scored_all if r["asset"] == asset]
         if not a_recs:
             continue
