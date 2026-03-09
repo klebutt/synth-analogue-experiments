@@ -717,6 +717,7 @@ def _get_or_compute_stats(all_records: list) -> dict:
     stats_sample = completed_scoring[-200:]
     scored = _batch_score(stats_sample, now)
 
+    per_asset = {}
     avg_mae_pct = round(sum(r["mae_pct"] for r in scored) / len(scored), 3) if scored else None
     dir_correct = [r for r in scored if r.get("direction_correct") is True]
     dir_accuracy = round(len(dir_correct) / len(scored) * 100, 1) if scored else None
@@ -750,7 +751,6 @@ def _get_or_compute_stats(all_records: list) -> dict:
     spread_vals = [r["spread_pct"] for r in scored if r.get("spread_pct") is not None]
     avg_spread_pct = round(sum(spread_vals) / len(spread_vals), 3) if spread_vals else None
 
-    per_asset = {}
     for a in SCORING_ASSETS:
         a_scored = [r for r in scored if r["asset"] == a]
         a_crps = [r["crps_endpoint"] for r in a_scored if r.get("crps_endpoint") is not None]
