@@ -717,32 +717,6 @@ def _get_or_compute_stats(all_records: list) -> dict:
     stats_sample = completed_scoring[-200:]
     scored = _batch_score(stats_sample, now)
 
-    # Calibration + MAE for all assets (yfinance only — not validator-comparable for XAU/equities)
-    # For BTC/ETH/SOL use the same numbers as per_asset so the two blocks never conflict.
-    all_assets_set = set(ASSET_TICKERS.keys())
-    per_asset_yfinance = {}
-    for a in SCORING_ASSETS:
-        if a in per_asset and per_asset[a].get("count", 0) > 0:
-            per_asset_yfinance[a] = {
-                "count": per_asset[a]["count"],
-                "calibration_pct": per_asset[a].get("calibration_pct"),
-                "avg_mae_pct": per_asset[a].get("avg_mae_pct"),
-            }
-    sample_all = completed_scoring_all_assets[-200:]
-    scored_all = _batch_score_calibration_only(sample_all, now, all_assets_set - SCORING_ASSETS)
-    for asset in all_assets_set - SCORING_ASSETS:
-        a_recs = [r for r in scored_all if r["asset"] == asset]
-        if not a_recs:
-            continue
-        a_calib = [r["in_band"] for r in a_recs if r.get("in_band") is not None]
-        a_mae = [r["mae_pct"] for r in a_recs]
-        per_asset_yfinance[asset] = {
-            "count": len(a_recs),
-            "calibration_pct": round(
-                sum(1 for v in a_calib if v) / len(a_calib) * 100, 1
-            ) if a_calib else None,
-            "avg_mae_pct": round(sum(a_mae) / len(a_mae), 3) if a_mae else None,
-        }
     avg_mae_pct = round(sum(r["mae_pct"] for r in scored) / len(scored), 3) if scored else None
     dir_correct = [r for r in scored if r.get("direction_correct") is True]
     dir_accuracy = round(len(dir_correct) / len(scored) * 100, 1) if scored else None
@@ -791,6 +765,32 @@ def _get_or_compute_stats(all_records: list) -> dict:
             "calibration_pct": round(
                 sum(1 for v in a_calib if v) / len(a_calib) * 100, 1
             ) if a_calib else None,
+        }
+
+    # Calibration + MAE for all assets (yfinance only). For BTC/ETH/SOL use per_asset so the two blocks match.
+    all_assets_set = set(ASSET_TICKERS.keys())
+    per_asset_yfinance = {}
+    for a in SCORING_ASSETS:
+        if a in per_asset and per_asset[a].get("count", 0) > 0:
+            per_asset_yfinance[a] = {
+                "count": per_asset[a]["count"],
+                "calibration_pct": per_asset[a].get("calibration_pct"),
+                "avg_mae_pct": per_asset[a].get("avg_mae_pct"),
+            }
+    sample_all = completed_scoring_all_assets[-200:]
+    scored_all = _batch_score_calibration_only(sample_all, now, all_assets_set - SCORING_ASSETS)
+    for asset in all_assets_set - SCORING_ASSETS:
+        a_recs = [r for r in scored_all if r["asset"] == asset]
+        if not a_recs:
+            continue
+        a_calib = [r["in_band"] for r in a_recs if r.get("in_band") is not None]
+        a_mae = [r["mae_pct"] for r in a_recs]
+        per_asset_yfinance[asset] = {
+            "count": len(a_recs),
+            "calibration_pct": round(
+                sum(1 for v in a_calib if v) / len(a_calib) * 100, 1
+            ) if a_calib else None,
+            "avg_mae_pct": round(sum(a_mae) / len(a_mae), 3) if a_mae else None,
         }
 
     cached_stats = {
