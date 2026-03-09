@@ -470,6 +470,99 @@ def _batch_score(records, now):
     return results
 
 
+def _batch_score_calibration_only(records, now, assets):
+    """
+    Score completed records for calibration and MAE only, for any set of assets.
+    Uses yfinance actuals. For non-crypto (XAU, equities) these are NOT validator-comparable.
+    Returns list of dicts with asset, in_band, mae_pct.
+    """
+    by_asset = defaultdict(list)
+    for rec in records:
+        asset = rec.get("asset")
+        if asset in assets and asset in ASSET_TICKERS:
+            by_asset[asset].append(rec)
+
+    results = []
+    for asset, recs in by_asset.items():
+        ticker = ASSET_TICKERS.get(asset)
+        if not ticker:
+            continue
+
+        end_times = []
+        start_times = []
+        for rec in recs:
+            try:
+                et = datetime.fromisoformat(rec["end_time"].replace("Z", "+00:00"))
+                if et.tzinfo is None:
+                    et = et.replace(tzinfo=timezone.utc)
+                end_times.append(et)
+                st = datetime.fromisoformat(rec.get("start_time", "").replace("Z", "+00:00"))
+                if st.tzinfo is None:
+                    st = st.replace(tzinfo=timezone.utc)
+                start_times.append(st)
+            except Exception:
+                pass
+        if not end_times:
+            continue
+
+        window_start = min(min(end_times), min(start_times)) - timedelta(minutes=15)
+        window_end = max(end_times) + timedelta(minutes=15)
+        window_start = max(window_start, now - timedelta(hours=50))
+
+        try:
+            df = yf.download(
+                ticker, start=window_start, end=window_end,
+                interval="1m", progress=False, auto_adjust=True,
+            )
+            if df.empty:
+                continue
+            close = df["Close"]
+            if hasattr(close, "columns"):
+                close = close.iloc[:, 0]
+        except Exception:
+            continue
+
+        for rec in recs:
+            try:
+                et = datetime.fromisoformat(rec["end_time"].replace("Z", "+00:00"))
+                if et.tzinfo is None:
+                    et = et.replace(tzinfo=timezone.utc)
+                if et > now - timedelta(minutes=10):
+                    continue
+
+                idx = close.index.searchsorted(et)
+                if idx >= len(close):
+                    idx = len(close) - 1
+                actual_end = float(close.iloc[idx])
+
+                mean_path = rec.get("mean_path", [])
+                p10_path = rec.get("p10_path", [])
+                p90_path = rec.get("p90_path", [])
+                if not mean_path or actual_end <= 0:
+                    continue
+
+                pred_end = float(mean_path[-1])
+                mae_pct = round(abs(pred_end - actual_end) / actual_end * 100, 3)
+
+                in_band = None
+                if (p10_path and p90_path
+                        and len(p10_path) == len(mean_path)
+                        and len(p90_path) == len(mean_path)):
+                    p10_end = float(p10_path[-1])
+                    p90_end = float(p90_path[-1])
+                    in_band = p10_end <= actual_end <= p90_end
+
+                results.append({
+                    "asset": asset,
+                    "in_band": in_band,
+                    "mae_pct": mae_pct,
+                })
+            except Exception:
+                pass
+
+    return results
+
+
 def _build_diagnosis(stats: dict) -> dict:
     """
     Build actionable diagnosis from stats. Uses validator-aligned CRPS when available.
@@ -606,21 +699,42 @@ def _get_or_compute_stats(all_records: list) -> dict:
         return _stats_cache
 
     completed_scoring = []
+    completed_scoring_all_assets = []
     for rec in all_records:
-        if rec.get("asset") not in SCORING_ASSETS:
-            continue
         end_iso = rec.get("end_time", "")
         try:
             end_dt = datetime.fromisoformat(end_iso.replace("Z", "+00:00"))
             if end_dt.tzinfo is None:
                 end_dt = end_dt.replace(tzinfo=timezone.utc)
             if end_dt < now - timedelta(minutes=10):
-                completed_scoring.append(rec)
+                if rec.get("asset") in SCORING_ASSETS:
+                    completed_scoring.append(rec)
+                if rec.get("asset") in ASSET_TICKERS:
+                    completed_scoring_all_assets.append(rec)
         except Exception:
             pass
 
     stats_sample = completed_scoring[-200:]
     scored = _batch_score(stats_sample, now)
+
+    # Calibration + MAE for all assets (yfinance only — not validator-comparable for XAU/equities)
+    all_assets_set = set(ASSET_TICKERS.keys())
+    sample_all = completed_scoring_all_assets[-200:]
+    scored_all = _batch_score_calibration_only(sample_all, now, all_assets_set)
+    per_asset_yfinance = {}
+    for asset in all_assets_set:
+        a_recs = [r for r in scored_all if r["asset"] == asset]
+        if not a_recs:
+            continue
+        a_calib = [r["in_band"] for r in a_recs if r.get("in_band") is not None]
+        a_mae = [r["mae_pct"] for r in a_recs]
+        per_asset_yfinance[asset] = {
+            "count": len(a_recs),
+            "calibration_pct": round(
+                sum(1 for v in a_calib if v) / len(a_calib) * 100, 1
+            ) if a_calib else None,
+            "avg_mae_pct": round(sum(a_mae) / len(a_mae), 3) if a_mae else None,
+        }
     avg_mae_pct = round(sum(r["mae_pct"] for r in scored) / len(scored), 3) if scored else None
     dir_correct = [r for r in scored if r.get("direction_correct") is True]
     dir_accuracy = round(len(dir_correct) / len(scored) * 100, 1) if scored else None
@@ -681,6 +795,7 @@ def _get_or_compute_stats(all_records: list) -> dict:
         "calibration_pct": calibration_pct,
         "avg_spread_pct": avg_spread_pct,
         "per_asset": per_asset,
+        "per_asset_yfinance": per_asset_yfinance,
     }
     _stats_cache = cached_stats
     _stats_cache_ts = now
@@ -730,6 +845,7 @@ def api_predictions():
             "calibration_pct": cached_stats.get("calibration_pct"),
             "avg_spread_pct": cached_stats.get("avg_spread_pct"),
             "per_asset": cached_stats.get("per_asset", {}),
+            "per_asset_yfinance": cached_stats.get("per_asset_yfinance", {}),
             "assets": assets_seen,
         },
     })

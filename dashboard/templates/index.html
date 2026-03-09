@@ -291,6 +291,7 @@
     .per-interval-label { font-weight: 600; }
     .per-interval-vals span { margin-right: 12px; }
     .per-interval-vals .iv { color: var(--text); }
+    .all-assets-yf-section { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
   </style>
 </head>
 <body>
@@ -369,6 +370,12 @@
       <span id="per-interval-vals"></span>
     </div>
     <div id="per-asset-breakdown"></div>
+
+    <div class="section all-assets-yf-section">
+      <div class="section-header">All assets (yfinance only)</div>
+      <p class="methodology-caveat">Calibration and MAE using Yahoo Finance actuals. Not validator-comparable for XAU and tokenised equities — use for internal comparison only.</p>
+      <div id="per-asset-yfinance"></div>
+    </div>
   </div>
 
   <!-- Model diagnosis -->
@@ -550,6 +557,7 @@
     }
 
     renderPerAsset(stats.per_asset || {});
+    renderPerAssetYfinance(stats.per_asset_yfinance || {});
   }
 
   const ASSET_COLORS = {
@@ -570,6 +578,22 @@
         <div class="pa-stat">CRPS: <strong>${crpsVal != null ? crpsVal.toFixed(2) : '–'}</strong></div>
         <div class="pa-stat">MAE: <strong>${v.avg_mae_pct != null ? v.avg_mae_pct.toFixed(3) + '%' : '–'}</strong></div>
         <div class="pa-stat">Cal: <strong>${v.calibration_pct != null ? v.calibration_pct.toFixed(0) + '%' : '–'}</strong></div>
+        <div class="pa-stat">n=${v.count}</div>
+      </div>`;
+    }).join('')}</div>`;
+  }
+
+  function renderPerAssetYfinance(perAssetYfinance) {
+    const el = document.getElementById('per-asset-yfinance');
+    if (!el) return;
+    const assets = Object.entries(perAssetYfinance).filter(([_, v]) => v && v.count > 0);
+    if (assets.length === 0) { el.innerHTML = ''; return; }
+    el.innerHTML = `<div class="per-asset-row">${assets.map(([asset, v]) => {
+      const color = ASSET_COLORS[asset] || '#8b949e';
+      return `<div class="per-asset-card" style="border-left:3px solid ${color}">
+        <div class="pa-asset">${asset}</div>
+        <div class="pa-stat">Cal: <strong>${v.calibration_pct != null ? v.calibration_pct.toFixed(0) + '%' : '–'}</strong></div>
+        <div class="pa-stat">MAE: <strong>${v.avg_mae_pct != null ? v.avg_mae_pct.toFixed(3) + '%' : '–'}</strong></div>
         <div class="pa-stat">n=${v.count}</div>
       </div>`;
     }).join('')}</div>`;

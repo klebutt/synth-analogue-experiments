@@ -74,6 +74,13 @@ Returns recent predictions with CRPS-aligned accuracy statistics.
       "ETH": { "count": 50, "avg_crps": 3.20, "avg_validator_aligned_crps": 36.2, "avg_mae_pct": 0.15, "calibration_pct": 70.0 },
       "SOL": { "count": 50, "avg_crps": 0.45, "avg_validator_aligned_crps": 39.0, "avg_mae_pct": 0.18, "calibration_pct": 72.0 }
     },
+    "per_asset_yfinance": {
+      "BTC": { "count": 50, "calibration_pct": 75.0, "avg_mae_pct": 0.12 },
+      "ETH": { "count": 50, "calibration_pct": 70.0, "avg_mae_pct": 0.15 },
+      "SOL": { "count": 50, "calibration_pct": 72.0, "avg_mae_pct": 0.18 },
+      "XAU": { "count": 45, "calibration_pct": 68.0, "avg_mae_pct": 0.22 },
+      "SPYX": { "count": 40, "calibration_pct": 72.5, "avg_mae_pct": 0.18 }
+    },
     "assets": ["BTC", "ETH", "SOL", "XAU", "SPYX"]
   }
 }
@@ -86,6 +93,7 @@ Returns recent predictions with CRPS-aligned accuracy statistics.
 - `estimated_crps` / `estimated_crps_pct` — Legacy Gaussian CRPS on raw prices at the endpoint (secondary).
 - `calibration_pct` — Percentage of actuals in p10–p90 band. Target ~80%.
 - `avg_spread_pct` — Average (p90 − p10) / mean at the endpoint.
+- `per_asset_yfinance` — Calibration and MAE for **all** assets (BTC, ETH, SOL, XAU, SPYX, NVDAX, TSLAX, AAPLX, GOOGLX) using Yahoo Finance actuals. **Not validator-comparable** for XAU and tokenised equities; use for internal comparison only. Each key has `count`, `calibration_pct`, `avg_mae_pct`.
 
 ---
 
@@ -280,7 +288,7 @@ The frontend is a single HTML file (`dashboard/templates/index.html`) using:
 1. **Status Bar** — miner status, requests, memory, restarts (from `/api/status`)
 2. **On-Chain Metrics** — incentive, emission, validator trust, etc. (from `/api/chain`)
 3. **How validators score** — Short panel: CRPS on bp over 5m/30m/3h/24h; prompt score = sum; caveat (yfinance vs Pyth; BTC/ETH/SOL comparable).
-4. **Model Performance** — Validator CRPS (primary), calibration, spread, MAE, scored count; per-interval CRPS row (5m, 30m, 3h, 24h); per-asset breakdown (from `/api/predictions`)
+4. **Model Performance** — Validator CRPS (primary), calibration, spread, MAE, scored count; per-interval CRPS row (5m, 30m, 3h, 24h); per-asset breakdown (BTC/ETH/SOL); **All assets (yfinance only)** — calibration and MAE for XAU and tokenised equities with caveat (from `/api/predictions`)
 5. **Model diagnosis** — summary, suggested focus, worst_interval (if set), and actionable bullets (from `/api/diagnostics`)
 6. **CRPS Trend** — time-series chart of CRPS per asset over last 48h (from `/api/charts`)
 7. **Price Charts** — 3-column grid, each chart shows 48h actual price + up to 3 overlaid predictions with p10-p90 bands (from `/api/charts`)
